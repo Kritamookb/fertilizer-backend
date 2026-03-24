@@ -30,7 +30,7 @@ def parse_iso_week(week: str) -> tuple[date, date]:
         week_start = date.fromisocalendar(year, week_number, 1)
         week_end = date.fromisocalendar(year, week_number, 7)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid week format") from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="รูปแบบสัปดาห์ไม่ถูกต้อง") from exc
 
     return week_start, week_end
 
@@ -125,4 +125,3 @@ def summary_report(db: Session = Depends(get_db)) -> SummaryReportResponse:
             for product_id, product_name, unit, total_quantity in by_product_rows
         ],
     )
-

@@ -18,21 +18,21 @@ def ensure_referrer_exists(db: Session, referred_by_id: int | None) -> None:
     if referred_by_id is None:
         return
     if db.get(Agent, referred_by_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Referrer not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบผู้แนะนำ")
 
 
 def ensure_agent_referral_is_valid(db: Session, agent_id: int, referred_by_id: int | None) -> None:
     if referred_by_id is None:
         return
     if referred_by_id == agent_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Agent cannot refer itself")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ตัวแทนไม่สามารถแนะนำตัวเองได้")
 
     current = db.get(Agent, referred_by_id)
     while current is not None:
         if current.referred_by_id == agent_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Referral cycle is not allowed",
+                detail="โครงสร้างการแนะนำแบบวนซ้ำไม่ถูกต้อง",
             )
         current = db.get(Agent, current.referred_by_id) if current.referred_by_id else None
 
@@ -70,14 +70,14 @@ def create_agent(payload: AgentCreate, db: Session = Depends(get_db)) -> Agent:
     if existing_count >= settings.max_agents:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Maximum of {settings.max_agents} agents reached",
+            detail=f"จำนวนตัวแทนถึงขีดจำกัดสูงสุด {settings.max_agents} คนแล้ว",
         )
 
     ensure_referrer_exists(db, payload.referred_by_id)
 
     duplicate_phone = db.scalar(select(Agent).where(Agent.phone == payload.phone))
     if duplicate_phone is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone already exists")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="เบอร์โทรนี้ถูกใช้งานแล้ว")
 
     agent = Agent(**payload.model_dump())
     db.add(agent)
@@ -90,7 +90,7 @@ def create_agent(payload: AgentCreate, db: Session = Depends(get_db)) -> Agent:
 def get_agent(agent_id: int, db: Session = Depends(get_db)) -> AgentDetail:
     agent = db.get(Agent, agent_id)
     if agent is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบตัวแทน")
 
     direct_referrals = db.scalars(
         select(Agent).where(Agent.referred_by_id == agent_id).order_by(Agent.created_at.desc())
@@ -127,14 +127,14 @@ def get_agent(agent_id: int, db: Session = Depends(get_db)) -> AgentDetail:
 def update_agent(agent_id: int, payload: AgentUpdate, db: Session = Depends(get_db)) -> Agent:
     agent = db.get(Agent, agent_id)
     if agent is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบตัวแทน")
 
     update_data = payload.model_dump(exclude_unset=True)
 
     if "phone" in update_data and update_data["phone"] != agent.phone:
         duplicate_phone = db.scalar(select(Agent).where(Agent.phone == update_data["phone"]))
         if duplicate_phone is not None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone already exists")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="เบอร์โทรนี้ถูกใช้งานแล้ว")
 
     if "referred_by_id" in update_data:
         ensure_referrer_exists(db, update_data["referred_by_id"])

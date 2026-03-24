@@ -50,7 +50,7 @@ def get_current_admin(
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            detail="กรุณาเข้าสู่ระบบก่อนใช้งาน",
         )
 
     try:
@@ -63,21 +63,20 @@ def get_current_admin(
     except JWTError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
+            detail="โทเคนเข้าสู่ระบบไม่ถูกต้อง",
         ) from exc
 
     if not subject:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload",
+            detail="ข้อมูลโทเคนไม่ถูกต้อง",
         )
 
     admin = db.get(AdminUser, int(subject))
     if admin is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Admin user not found",
+            detail="ไม่พบบัญชีผู้ดูแลระบบ",
         )
 
     return admin
-

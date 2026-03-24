@@ -19,7 +19,7 @@ def parse_week(week: str) -> tuple[date, date]:
         year_str, week_str = week.split("-W")
         week_start = date.fromisocalendar(int(year_str), int(week_str), 1)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid week format") from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="รูปแบบสัปดาห์ไม่ถูกต้อง") from exc
 
     return week_start, date.fromisocalendar(int(year_str), int(week_str), 7)
 
@@ -69,11 +69,11 @@ def list_sales(
 def create_sale(payload: SaleCreate, db: Session = Depends(get_db)) -> SaleRead:
     agent = db.get(Agent, payload.agent_id)
     if agent is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบตัวแทน")
 
     product = db.get(Product, payload.product_id)
     if product is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบสินค้า")
 
     sale = Sale(**payload.model_dump())
     db.add(sale)
@@ -94,8 +94,7 @@ def create_sale(payload: SaleCreate, db: Session = Depends(get_db)) -> SaleRead:
 def delete_sale(sale_id: int, db: Session = Depends(get_db)) -> None:
     sale = db.get(Sale, sale_id)
     if sale is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sale not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบรายการขาย")
 
     db.delete(sale)
     db.commit()
-

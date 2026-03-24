@@ -19,7 +19,7 @@ class AdminLoginRequest(BaseModel):
     @model_validator(mode="after")
     def validate_identifier(self) -> "AdminLoginRequest":
         if not self.username and not self.email:
-            raise ValueError("Either username or email is required")
+            raise ValueError("กรุณากรอกชื่อผู้ใช้หรืออีเมล")
         return self
 
     @property
@@ -152,4 +152,3 @@ class SummaryReportResponse(BaseModel):
     total_sales_quantity: int
     by_agent: list[SummaryByAgentItem]
     by_product: list[SummaryByProductItem]
-

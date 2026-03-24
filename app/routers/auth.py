@@ -15,7 +15,7 @@ def login(payload: AdminLoginRequest, db: Session = Depends(get_db)) -> TokenRes
     if admin is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+            detail="ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง",
         )
 
     return TokenResponse(access_token=create_access_token(str(admin.id)))
@@ -24,4 +24,3 @@ def login(payload: AdminLoginRequest, db: Session = Depends(get_db)) -> TokenRes
 @router.get("/me", response_model=AdminUserRead)
 def me(current_admin: AdminUser = Depends(get_current_admin)) -> AdminUser:
     return current_admin
-

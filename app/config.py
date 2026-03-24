@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24
 
     commission_rate_per_unit: int = 25
-    max_agents: int = 100
+    max_agents: int = 50
 
     admin_username: str = "admin"
     admin_email: str = "admin@gmail.com"
@@ -39,4 +39,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
