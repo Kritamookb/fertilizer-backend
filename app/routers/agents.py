@@ -4,12 +4,21 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased, joinedload
 
-from app.agent_types import get_agent_unit_price
+from app.agent_types import AGENT_TYPE_SUB_CENTER, get_agent_unit_price
 from app.auth import get_current_admin
 from app.config import get_settings
 from app.database import get_db
-from app.models import Agent, Sale
-from app.schemas import AgentCreate, AgentDetail, AgentListItem, AgentRead, AgentUpdate, SaleRead
+from app.models import Agent, AgentInventory, Product, Sale
+from app.schemas import (
+    AgentCreate,
+    AgentDetail,
+    AgentInventoryBulkUpdate,
+    AgentInventoryRead,
+    AgentListItem,
+    AgentRead,
+    AgentUpdate,
+    SaleRead,
+)
 
 router = APIRouter(prefix="/agents", tags=["agents"], dependencies=[Depends(get_current_admin)])
 settings = get_settings()
@@ -45,6 +54,70 @@ def validate_agent_inventory(agent_type: str, stock_unit_price: int) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"ราคาสต๊อกสำหรับประเภทตัวแทนนี้ต้องเป็น {expected_price} บาท",
         )
+
+
+def build_inventory_rows(
+    db: Session, agent: Agent, inventory_items: list
+) -> list[AgentInventory]:
+    products = list(db.scalars(select(Product).order_by(Product.id.asc())).all())
+    products_by_id = {product.id: product for product in products}
+    requested_by_product = {item.product_id: item for item in inventory_items}
+
+    unknown_product_ids = sorted(set(requested_by_product) - set(products_by_id))
+    if unknown_product_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"ไม่พบสินค้า product_id={unknown_product_ids[0]}",
+        )
+
+    rows: list[AgentInventory] = []
+    for product in products:
+        payload_item = requested_by_product.get(product.id)
+        quantity = payload_item.quantity if payload_item else 0
+        expected_unit_price = (
+            product.default_price_sub_center
+            if agent.agent_type == AGENT_TYPE_SUB_CENTER
+            else product.default_price_general
+        )
+        unit_price = payload_item.unit_price if payload_item else expected_unit_price
+        if unit_price != expected_unit_price:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"ราคาตั้งต้นของ {product.name} ต้องตรงกับราคาของประเภทตัวแทน",
+            )
+        rows.append(
+            AgentInventory(
+                agent=agent,
+                product_id=product.id,
+                quantity=quantity,
+                unit_price=unit_price,
+            )
+        )
+    return rows
+
+
+def serialize_inventory_items(items: list[AgentInventory]) -> list[AgentInventoryRead]:
+    return [
+        AgentInventoryRead(
+            product_id=item.product_id,
+            product_name=item.product.name,
+            product_unit=item.product.unit,
+            quantity=item.quantity,
+            unit_price=item.unit_price,
+            is_commissionable=item.product.is_commissionable,
+        )
+        for item in sorted(items, key=lambda entry: (entry.product.name.lower(), entry.product_id))
+    ]
+
+
+def sync_agent_stock_quantity(agent: Agent) -> None:
+    agent.stock_quantity = sum(item.quantity for item in agent.inventory_items)
+
+
+def get_inventory_price_for_agent_type(product: Product, agent_type: str) -> int:
+    if agent_type == AGENT_TYPE_SUB_CENTER:
+        return product.default_price_sub_center
+    return product.default_price_general
 
 
 @router.get("", response_model=list[AgentListItem])
@@ -90,7 +163,17 @@ def create_agent(payload: AgentCreate, db: Session = Depends(get_db)) -> Agent:
     if duplicate_phone is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="เบอร์โทรนี้ถูกใช้งานแล้ว")
 
-    agent = Agent(**payload.model_dump())
+    agent = Agent(
+        name=payload.name,
+        phone=payload.phone,
+        agent_type=payload.agent_type,
+        stock_unit_price=payload.stock_unit_price,
+        referred_by_id=payload.referred_by_id,
+        is_active=payload.is_active,
+    )
+    inventory_rows = build_inventory_rows(db, agent, payload.inventory_items)
+    agent.inventory_items.extend(inventory_rows)
+    sync_agent_stock_quantity(agent)
     db.add(agent)
     db.commit()
     db.refresh(agent)
@@ -99,7 +182,11 @@ def create_agent(payload: AgentCreate, db: Session = Depends(get_db)) -> Agent:
 
 @router.get("/{agent_id}", response_model=AgentDetail)
 def get_agent(agent_id: int, db: Session = Depends(get_db)) -> AgentDetail:
-    agent = db.get(Agent, agent_id)
+    agent = db.scalar(
+        select(Agent)
+        .options(joinedload(Agent.referrer), joinedload(Agent.inventory_items).joinedload(AgentInventory.product))
+        .where(Agent.id == agent_id)
+    )
     if agent is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบตัวแทน")
 
@@ -130,13 +217,18 @@ def get_agent(agent_id: int, db: Session = Depends(get_db)) -> AgentDetail:
         **AgentRead.model_validate(agent).model_dump(),
         referrer_name=agent.referrer.name if agent.referrer else None,
         direct_referrals=[AgentRead.model_validate(item) for item in direct_referrals],
+        inventory_items=serialize_inventory_items(agent.inventory_items),
         sales_history=sales_history,
     )
 
 
 @router.put("/{agent_id}", response_model=AgentRead)
 def update_agent(agent_id: int, payload: AgentUpdate, db: Session = Depends(get_db)) -> Agent:
-    agent = db.get(Agent, agent_id)
+    agent = db.scalar(
+        select(Agent)
+        .options(joinedload(Agent.inventory_items).joinedload(AgentInventory.product))
+        .where(Agent.id == agent_id)
+    )
     if agent is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบตัวแทน")
 
@@ -164,9 +256,44 @@ def update_agent(agent_id: int, payload: AgentUpdate, db: Session = Depends(get_
     for key, value in update_data.items():
         setattr(agent, key, value)
 
+    if "stock_unit_price" in update_data or "agent_type" in update_data:
+        for item in agent.inventory_items:
+            item.unit_price = get_inventory_price_for_agent_type(item.product, agent.agent_type)
+
     db.commit()
     db.refresh(agent)
     return agent
+
+
+@router.put("/{agent_id}/inventory", response_model=list[AgentInventoryRead])
+def update_agent_inventory(
+    agent_id: int,
+    payload: AgentInventoryBulkUpdate,
+    db: Session = Depends(get_db),
+) -> list[AgentInventoryRead]:
+    agent = db.scalar(
+        select(Agent)
+        .options(joinedload(Agent.inventory_items).joinedload(AgentInventory.product))
+        .where(Agent.id == agent_id)
+    )
+    if agent is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบตัวแทน")
+
+    inventory_by_product = {item.product_id: item for item in agent.inventory_items}
+    known_product_ids = set(inventory_by_product)
+
+    for item in payload.items:
+        if item.product_id not in known_product_ids:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"ไม่พบสินค้าสำหรับตัวแทน product_id={item.product_id}",
+            )
+        inventory_by_product[item.product_id].quantity = item.quantity
+
+    sync_agent_stock_quantity(agent)
+    db.commit()
+    db.refresh(agent)
+    return serialize_inventory_items(agent.inventory_items)
 
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)

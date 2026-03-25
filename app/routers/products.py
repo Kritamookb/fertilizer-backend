@@ -4,10 +4,17 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_admin
 from app.database import get_db
-from app.models import Product
+from app.agent_types import AGENT_TYPE_SUB_CENTER
+from app.models import Agent, AgentInventory, Product
 from app.schemas import ProductCreate, ProductRead, ProductUpdate
 
 router = APIRouter(prefix="/products", tags=["products"], dependencies=[Depends(get_current_admin)])
+
+
+def get_product_price_for_agent_type(product: Product, agent_type: str) -> int:
+    if agent_type == AGENT_TYPE_SUB_CENTER:
+        return product.default_price_sub_center
+    return product.default_price_general
 
 
 @router.get("", response_model=list[ProductRead])
@@ -25,6 +32,19 @@ def create_product(payload: ProductCreate, db: Session = Depends(get_db)) -> Pro
     db.add(product)
     db.commit()
     db.refresh(product)
+
+    agents = list(db.scalars(select(Agent).order_by(Agent.id.asc())).all())
+    for agent in agents:
+        db.add(
+            AgentInventory(
+                agent_id=agent.id,
+                product_id=product.id,
+                quantity=0,
+                unit_price=get_product_price_for_agent_type(product, agent.agent_type),
+            )
+        )
+    if agents:
+        db.commit()
     return product
 
 
@@ -42,6 +62,14 @@ def update_product(product_id: int, payload: ProductUpdate, db: Session = Depend
 
     for key, value in update_data.items():
         setattr(product, key, value)
+
+    inventory_rows = db.scalars(
+        select(AgentInventory)
+        .join(Agent, Agent.id == AgentInventory.agent_id)
+        .where(AgentInventory.product_id == product_id)
+    ).all()
+    for row in inventory_rows:
+        row.unit_price = get_product_price_for_agent_type(product, row.agent.agent_type)
 
     db.commit()
     db.refresh(product)

@@ -40,6 +40,8 @@ class AdminUserRead(BaseModel):
 class ProductBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     unit: str = Field(min_length=1, max_length=50)
+    default_price_general: int = Field(gt=0)
+    default_price_sub_center: int = Field(gt=0)
     is_commissionable: bool = True
 
 
@@ -50,6 +52,8 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     unit: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    default_price_general: Optional[int] = Field(default=None, gt=0)
+    default_price_sub_center: Optional[int] = Field(default=None, gt=0)
     is_commissionable: Optional[bool] = None
 
 
@@ -59,11 +63,35 @@ class ProductRead(ProductBase):
     id: int
 
 
+class AgentInventoryBase(BaseModel):
+    product_id: int
+    quantity: int = Field(ge=0)
+    unit_price: int = Field(gt=0)
+
+
+class AgentInventoryCreate(AgentInventoryBase):
+    pass
+
+
+class AgentInventoryUpdate(BaseModel):
+    product_id: int
+    quantity: int = Field(ge=0)
+
+
+class AgentInventoryRead(BaseModel):
+    product_id: int
+    product_name: str
+    product_unit: str
+    quantity: int
+    unit_price: int
+    is_commissionable: bool
+
+
 class AgentBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     phone: str = Field(min_length=1, max_length=50)
     agent_type: AgentType
-    stock_quantity: int = Field(ge=0)
+    stock_quantity: int = Field(default=0, ge=0)
     stock_unit_price: int = Field(gt=0)
     referred_by_id: Optional[int] = None
     is_active: bool = True
@@ -77,7 +105,7 @@ class AgentBase(BaseModel):
 
 
 class AgentCreate(AgentBase):
-    pass
+    inventory_items: list[AgentInventoryCreate] = Field(default_factory=list)
 
 
 class AgentUpdate(BaseModel):
@@ -137,7 +165,12 @@ class SaleRead(BaseModel):
 class AgentDetail(AgentRead):
     referrer_name: Optional[str] = None
     direct_referrals: list[AgentRead]
+    inventory_items: list[AgentInventoryRead]
     sales_history: list[SaleRead]
+
+
+class AgentInventoryBulkUpdate(BaseModel):
+    items: list[AgentInventoryUpdate]
 
 
 class WeeklyCommissionItem(BaseModel):

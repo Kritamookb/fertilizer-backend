@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.auth import get_current_admin
 from app.database import get_db
-from app.models import Agent, Product, Sale
+from app.models import Agent, AgentInventory, Product, Sale
 from app.schemas import SaleCreate, SaleRead
 
 router = APIRouter(prefix="/sales", tags=["sales"], dependencies=[Depends(get_current_admin)])
@@ -67,7 +67,11 @@ def list_sales(
 
 @router.post("", response_model=SaleRead, status_code=status.HTTP_201_CREATED)
 def create_sale(payload: SaleCreate, db: Session = Depends(get_db)) -> SaleRead:
-    agent = db.get(Agent, payload.agent_id)
+    agent = db.scalar(
+        select(Agent)
+        .options(joinedload(Agent.inventory_items))
+        .where(Agent.id == payload.agent_id)
+    )
     if agent is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบตัวแทน")
 
@@ -75,8 +79,19 @@ def create_sale(payload: SaleCreate, db: Session = Depends(get_db)) -> SaleRead:
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบสินค้า")
 
+    inventory_item = next(
+        (item for item in agent.inventory_items if item.product_id == payload.product_id),
+        None,
+    )
+    if inventory_item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบสต๊อกสินค้าของตัวแทน")
+    if inventory_item.quantity < payload.quantity:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="สต๊อกสินค้าไม่เพียงพอ")
+
     sale = Sale(**payload.model_dump())
     db.add(sale)
+    inventory_item.quantity -= payload.quantity
+    agent.stock_quantity = sum(item.quantity for item in agent.inventory_items)
     db.commit()
     db.refresh(sale)
 
@@ -95,6 +110,21 @@ def delete_sale(sale_id: int, db: Session = Depends(get_db)) -> None:
     sale = db.get(Sale, sale_id)
     if sale is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบรายการขาย")
+
+    inventory_item = db.scalar(
+        select(AgentInventory).where(
+            AgentInventory.agent_id == sale.agent_id,
+            AgentInventory.product_id == sale.product_id,
+        )
+    )
+    agent = db.get(Agent, sale.agent_id)
+    if inventory_item is not None:
+        inventory_item.quantity += sale.quantity
+    if agent is not None:
+        inventory_rows = db.scalars(
+            select(AgentInventory).where(AgentInventory.agent_id == sale.agent_id)
+        ).all()
+        agent.stock_quantity = sum(item.quantity for item in inventory_rows)
 
     db.delete(sale)
     db.commit()

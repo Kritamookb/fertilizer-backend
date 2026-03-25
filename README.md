@@ -22,3 +22,4 @@ FastAPI backend for the fertilizer membership and single-level commission system
 
 - Admin user from `.env`: `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`
 - Products: `ปุ๋ย A`, `ปุ๋ย B`, `ปุ๋ย C` (default to commissionable)
+- Each product has default prices for `general` and `sub_center` agent types

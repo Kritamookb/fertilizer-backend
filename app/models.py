@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.agent_types import AGENT_TYPE_GENERAL, get_agent_unit_price
@@ -46,6 +46,9 @@ class Agent(Base):
     direct_referrals: Mapped[list["Agent"]] = relationship(
         "Agent", back_populates="referrer", cascade="save-update"
     )
+    inventory_items: Mapped[list["AgentInventory"]] = relationship(
+        "AgentInventory", back_populates="agent", cascade="all, delete-orphan"
+    )
     sales: Mapped[list["Sale"]] = relationship(
         "Sale", back_populates="agent", cascade="all, delete-orphan"
     )
@@ -57,13 +60,32 @@ class Product(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     unit: Mapped[str] = mapped_column(String(50), nullable=False)
+    default_price_general: Mapped[int] = mapped_column(Integer, nullable=False, default=800)
+    default_price_sub_center: Mapped[int] = mapped_column(Integer, nullable=False, default=770)
     is_commissionable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=func.true()
     )
 
+    inventory_items: Mapped[list["AgentInventory"]] = relationship(
+        "AgentInventory", back_populates="product", cascade="all, delete-orphan"
+    )
     sales: Mapped[list["Sale"]] = relationship(
         "Sale", back_populates="product", cascade="save-update"
     )
+
+
+class AgentInventory(Base):
+    __tablename__ = "agent_inventories"
+    __table_args__ = (UniqueConstraint("agent_id", "product_id", name="uq_agent_product_inventory"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"), nullable=False, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unit_price: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    agent: Mapped["Agent"] = relationship("Agent", back_populates="inventory_items")
+    product: Mapped["Product"] = relationship("Product", back_populates="inventory_items")
 
 
 class Sale(Base):

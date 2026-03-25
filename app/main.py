@@ -62,6 +62,14 @@ def ensure_sqlite_product_columns() -> None:
         statements.append(
             "ALTER TABLE products ADD COLUMN is_commissionable BOOLEAN NOT NULL DEFAULT 1"
         )
+    if "default_price_general" not in column_names:
+        statements.append(
+            "ALTER TABLE products ADD COLUMN default_price_general INTEGER NOT NULL DEFAULT 800"
+        )
+    if "default_price_sub_center" not in column_names:
+        statements.append(
+            "ALTER TABLE products ADD COLUMN default_price_sub_center INTEGER NOT NULL DEFAULT 770"
+        )
 
     if not statements:
         return
