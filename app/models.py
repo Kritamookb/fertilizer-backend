@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.agent_types import AGENT_TYPE_GENERAL, get_agent_unit_price
 from app.database import Base
 
 
@@ -24,6 +25,13 @@ class Agent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     phone: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
+    agent_type: Mapped[str] = mapped_column(String(50), nullable=False, default=AGENT_TYPE_GENERAL)
+    stock_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    stock_unit_price: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=get_agent_unit_price(AGENT_TYPE_GENERAL),
+    )
     referred_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("agents.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

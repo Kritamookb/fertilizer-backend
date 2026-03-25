@@ -5,6 +5,8 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.agent_types import AgentType, get_agent_unit_price
+
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -58,8 +60,18 @@ class ProductRead(ProductBase):
 class AgentBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     phone: str = Field(min_length=1, max_length=50)
+    agent_type: AgentType
+    stock_quantity: int = Field(ge=0)
+    stock_unit_price: int = Field(gt=0)
     referred_by_id: Optional[int] = None
     is_active: bool = True
+
+    @model_validator(mode="after")
+    def validate_inventory_pricing(self) -> "AgentBase":
+        expected_price = get_agent_unit_price(self.agent_type)
+        if self.stock_unit_price != expected_price:
+            raise ValueError(f"ราคาสต๊อกสำหรับประเภทตัวแทนนี้ต้องเป็น {expected_price} บาท")
+        return self
 
 
 class AgentCreate(AgentBase):
@@ -69,6 +81,9 @@ class AgentCreate(AgentBase):
 class AgentUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     phone: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    agent_type: Optional[AgentType] = None
+    stock_quantity: Optional[int] = Field(default=None, ge=0)
+    stock_unit_price: Optional[int] = Field(default=None, gt=0)
     referred_by_id: Optional[int] = None
     is_active: Optional[bool] = None
 
@@ -79,6 +94,9 @@ class AgentRead(BaseModel):
     id: int
     name: str
     phone: str
+    agent_type: AgentType
+    stock_quantity: int
+    stock_unit_price: int
     referred_by_id: Optional[int]
     created_at: datetime
     is_active: bool
