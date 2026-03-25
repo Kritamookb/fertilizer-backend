@@ -34,6 +34,8 @@ class Settings(BaseSettings):
             "http://127.0.0.1:3000",
             "http://localhost:3001",
             "http://127.0.0.1:3001",
+            "https://fertilizer.connect2play.site",
+            "http://fertilizer.connect2play.site",
         ]
     )
 
