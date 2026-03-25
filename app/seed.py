@@ -23,7 +23,6 @@ def seed_initial_data(db: Session) -> None:
     existing_products = set(db.scalars(select(Product.name)).all())
     missing_products = product_names - existing_products
     for product_name in sorted(missing_products):
-        db.add(Product(name=product_name, unit="กระสอบ"))
+        db.add(Product(name=product_name, unit="กระสอบ", is_commissionable=True))
 
     db.commit()
-

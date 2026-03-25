@@ -46,11 +46,37 @@ def ensure_sqlite_agent_columns() -> None:
             connection.execute(text(statement))
 
 
+def ensure_sqlite_product_columns() -> None:
+    if not settings.database_url.startswith("sqlite"):
+        return
+
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "products" not in table_names:
+        return
+
+    column_names = {column["name"] for column in inspector.get_columns("products")}
+    statements: list[str] = []
+
+    if "is_commissionable" not in column_names:
+        statements.append(
+            "ALTER TABLE products ADD COLUMN is_commissionable BOOLEAN NOT NULL DEFAULT 1"
+        )
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     if settings.database_url.startswith("sqlite"):
         Base.metadata.create_all(bind=engine)
         ensure_sqlite_agent_columns()
+        ensure_sqlite_product_columns()
     with SessionLocal() as db:
         seed_initial_data(db)
     yield

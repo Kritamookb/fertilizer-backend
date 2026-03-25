@@ -57,6 +57,9 @@ class Product(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     unit: Mapped[str] = mapped_column(String(50), nullable=False)
+    is_commissionable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=func.true()
+    )
 
     sales: Mapped[list["Sale"]] = relationship(
         "Sale", back_populates="product", cascade="save-update"

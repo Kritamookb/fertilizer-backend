@@ -40,6 +40,7 @@ class AdminUserRead(BaseModel):
 class ProductBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     unit: str = Field(min_length=1, max_length=50)
+    is_commissionable: bool = True
 
 
 class ProductCreate(ProductBase):
@@ -49,6 +50,7 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     unit: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    is_commissionable: Optional[bool] = None
 
 
 class ProductRead(ProductBase):

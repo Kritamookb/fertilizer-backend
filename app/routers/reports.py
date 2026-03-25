@@ -52,6 +52,8 @@ def weekly_report(week: str, db: Session = Depends(get_db)) -> WeeklyReportRespo
             Sale,
             (Sale.agent_id == child_agent.id) & Sale.sale_date.between(week_start, week_end),
         )
+        .outerjoin(Product, Product.id == Sale.product_id)
+        .where((Product.is_commissionable.is_(True)) | (Sale.id.is_(None)))
         .group_by(Agent.id, Agent.name)
         .order_by(Agent.name.asc(), Agent.id.asc())
     )
