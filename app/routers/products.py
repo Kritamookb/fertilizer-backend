@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_admin
 from app.database import get_db
 from app.agent_types import AGENT_TYPE_SUB_CENTER
-from app.models import Agent, AgentInventory, Product
+from app.models import Agent, AgentInventory, Product, Sale
 from app.schemas import ProductCreate, ProductRead, ProductUpdate
 
 router = APIRouter(prefix="/products", tags=["products"], dependencies=[Depends(get_current_admin)])
@@ -74,3 +74,22 @@ def update_product(product_id: int, payload: ProductUpdate, db: Session = Depend
     db.commit()
     db.refresh(product)
     return product
+
+
+@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_product(product_id: int, db: Session = Depends(get_db)) -> None:
+    product = db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบสินค้า")
+
+    has_sales = db.scalar(
+        select(func.count()).select_from(Sale).where(Sale.product_id == product_id)
+    )
+    if has_sales:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ไม่สามารถลบสินค้าที่มีประวัติยอดขายได้",
+        )
+
+    db.delete(product)
+    db.commit()
