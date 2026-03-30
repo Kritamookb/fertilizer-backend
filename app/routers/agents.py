@@ -74,6 +74,11 @@ def build_inventory_rows(
     for product in products:
         payload_item = requested_by_product.get(product.id)
         quantity = payload_item.quantity if payload_item else 0
+        if quantity > product.company_stock_quantity:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"สต็อกบริษัทของ {product.name} ไม่เพียงพอ",
+            )
         expected_unit_price = (
             product.default_price_sub_center
             if agent.agent_type == AGENT_TYPE_SUB_CENTER
@@ -93,6 +98,7 @@ def build_inventory_rows(
                 unit_price=unit_price,
             )
         )
+        product.company_stock_quantity -= quantity
     return rows
 
 
@@ -105,6 +111,7 @@ def serialize_inventory_items(items: list[AgentInventory]) -> list[AgentInventor
             quantity=item.quantity,
             unit_price=item.unit_price,
             is_commissionable=item.product.is_commissionable,
+            company_stock_quantity=item.product.company_stock_quantity,
         )
         for item in sorted(items, key=lambda entry: (entry.product.name.lower(), entry.product_id))
     ]
@@ -112,6 +119,45 @@ def serialize_inventory_items(items: list[AgentInventory]) -> list[AgentInventor
 
 def sync_agent_stock_quantity(agent: Agent) -> None:
     agent.stock_quantity = sum(item.quantity for item in agent.inventory_items)
+
+
+def sync_inventory_with_company_stock(
+    agent: Agent,
+    inventory_updates: list,
+    db: Session,
+) -> None:
+    products = list(db.scalars(select(Product).order_by(Product.id.asc())).all())
+    products_by_id = {product.id: product for product in products}
+    inventory_by_product = {item.product_id: item for item in agent.inventory_items}
+    known_product_ids = set(inventory_by_product)
+
+    for item in inventory_updates:
+        if item.product_id not in known_product_ids:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"ไม่พบสินค้าสำหรับตัวแทน product_id={item.product_id}",
+            )
+
+        inventory_item = inventory_by_product[item.product_id]
+        product = products_by_id.get(item.product_id)
+        if product is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"ไม่พบสินค้า product_id={item.product_id}",
+            )
+
+        delta = item.quantity - inventory_item.quantity
+        if delta > 0:
+            if product.company_stock_quantity < delta:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"สต็อกบริษัทของ {product.name} ไม่เพียงพอ",
+                )
+            product.company_stock_quantity -= delta
+        elif delta < 0:
+            product.company_stock_quantity += -delta
+
+        inventory_item.quantity = item.quantity
 
 
 def get_inventory_price_for_agent_type(product: Product, agent_type: str) -> int:
@@ -182,7 +228,12 @@ def create_agent(payload: AgentCreate, db: Session = Depends(get_db)) -> Agent:
 
     agent = Agent(
         name=payload.name,
+        nickname=payload.nickname,
         phone=payload.phone,
+        line_id=payload.line_id,
+        bank_name=payload.bank_name,
+        bank_account_name=payload.bank_account_name,
+        bank_account_number=payload.bank_account_number,
         agent_type=payload.agent_type,
         stock_unit_price=payload.stock_unit_price,
         referred_by_id=payload.referred_by_id,
@@ -295,17 +346,7 @@ def update_agent_inventory(
     if agent is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบตัวแทน")
 
-    inventory_by_product = {item.product_id: item for item in agent.inventory_items}
-    known_product_ids = set(inventory_by_product)
-
-    for item in payload.items:
-        if item.product_id not in known_product_ids:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"ไม่พบสินค้าสำหรับตัวแทน product_id={item.product_id}",
-            )
-        inventory_by_product[item.product_id].quantity = item.quantity
-
+    sync_inventory_with_company_stock(agent, payload.items, db)
     sync_agent_stock_quantity(agent)
     db.commit()
     db.refresh(agent)
@@ -335,6 +376,11 @@ def delete_agent(agent_id: int, db: Session = Depends(get_db)) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="ไม่สามารถลบตัวแทนที่มีประวัติยอดขายได้",
         )
+
+    for inventory_item in agent.inventory_items:
+        product = db.get(Product, inventory_item.product_id)
+        if product is not None:
+            product.company_stock_quantity += inventory_item.quantity
 
     db.delete(agent)
     db.commit()

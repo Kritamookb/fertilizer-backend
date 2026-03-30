@@ -37,7 +37,12 @@ def ensure_agent_columns() -> None:
     ensure_columns(
         "agents",
         {
+            "nickname": "ALTER TABLE agents ADD COLUMN nickname VARCHAR(255) NULL",
             "agent_type": "ALTER TABLE agents ADD COLUMN agent_type VARCHAR(50) NOT NULL DEFAULT 'general'",
+            "line_id": "ALTER TABLE agents ADD COLUMN line_id VARCHAR(100) NULL",
+            "bank_name": "ALTER TABLE agents ADD COLUMN bank_name VARCHAR(255) NULL",
+            "bank_account_name": "ALTER TABLE agents ADD COLUMN bank_account_name VARCHAR(255) NULL",
+            "bank_account_number": "ALTER TABLE agents ADD COLUMN bank_account_number VARCHAR(100) NULL",
             "stock_quantity": "ALTER TABLE agents ADD COLUMN stock_quantity INTEGER NOT NULL DEFAULT 0",
             "stock_unit_price": f"ALTER TABLE agents ADD COLUMN stock_unit_price INTEGER NOT NULL DEFAULT {get_agent_unit_price(AGENT_TYPE_GENERAL)}",
         },
@@ -49,6 +54,7 @@ def ensure_product_columns() -> None:
         "products",
         {
             "is_commissionable": "ALTER TABLE products ADD COLUMN is_commissionable BOOLEAN NOT NULL DEFAULT 1",
+            "company_stock_quantity": "ALTER TABLE products ADD COLUMN company_stock_quantity INTEGER NOT NULL DEFAULT 0",
             "cost_price_hq": "ALTER TABLE products ADD COLUMN cost_price_hq INTEGER NOT NULL DEFAULT 550",
             "default_price_retail": "ALTER TABLE products ADD COLUMN default_price_retail INTEGER NOT NULL DEFAULT 890",
             "default_price_general": "ALTER TABLE products ADD COLUMN default_price_general INTEGER NOT NULL DEFAULT 800",
@@ -61,6 +67,9 @@ def ensure_sale_columns() -> None:
     ensure_columns(
         "sales",
         {
+            "customer_id": "ALTER TABLE sales ADD COLUMN customer_id INTEGER NULL",
+            "sale_type": "ALTER TABLE sales ADD COLUMN sale_type VARCHAR(50) NOT NULL DEFAULT 'agent_pickup'",
+            "payment_method": "ALTER TABLE sales ADD COLUMN payment_method VARCHAR(50) NOT NULL DEFAULT 'transfer'",
             "unit_price": "ALTER TABLE sales ADD COLUMN unit_price INTEGER NOT NULL DEFAULT 800",
             "unit_cost": "ALTER TABLE sales ADD COLUMN unit_cost INTEGER NOT NULL DEFAULT 550",
             "total_amount": "ALTER TABLE sales ADD COLUMN total_amount INTEGER NOT NULL DEFAULT 0",

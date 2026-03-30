@@ -50,7 +50,9 @@ def weekly_report(week: str, db: Session = Depends(get_db)) -> WeeklyReportRespo
         .outerjoin(child_agent, child_agent.referred_by_id == Agent.id)
         .outerjoin(
             Sale,
-            (Sale.agent_id == child_agent.id) & Sale.sale_date.between(week_start, week_end),
+            (Sale.agent_id == child_agent.id)
+            & Sale.sale_date.between(week_start, week_end)
+            & (Sale.sale_type == "customer_purchase"),
         )
         .outerjoin(Product, Product.id == Sale.product_id)
         .where((Product.is_commissionable.is_(True)) | (Sale.id.is_(None)))

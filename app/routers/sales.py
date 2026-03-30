@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth import get_current_admin
 from app.database import get_db
-from app.models import Agent, AgentInventory, Product, Sale
+from app.models import Agent, AgentInventory, Customer, Product, Sale
 from app.schemas import SaleCreate, SaleRead
 
 router = APIRouter(prefix="/sales", tags=["sales"], dependencies=[Depends(get_current_admin)])
@@ -32,6 +32,46 @@ def resolve_retail_unit_price(product: Product, quantity: int) -> int:
     return resolved_price
 
 
+def serialize_sale(sale: Sale) -> SaleRead:
+    return SaleRead(
+        **SaleRead.model_validate(sale).model_dump(
+            exclude={"agent_name", "product_name", "product_unit", "customer_name", "customer_phone"}
+        ),
+        agent_name=sale.agent.name if sale.agent else None,
+        product_name=sale.product.name if sale.product else None,
+        product_unit=sale.product.unit if sale.product else None,
+        customer_name=sale.customer.name if sale.customer else None,
+        customer_phone=sale.customer.phone if sale.customer else None,
+    )
+
+
+def resolve_customer(db: Session, payload: SaleCreate) -> Customer | None:
+    if payload.sale_type != "customer_purchase" or not payload.customer_name:
+        return None
+
+    statement = select(Customer).where(
+        Customer.agent_id == payload.agent_id,
+        Customer.name == payload.customer_name.strip(),
+    )
+    if payload.customer_phone:
+        statement = statement.where(Customer.phone == payload.customer_phone.strip())
+
+    customer = db.scalar(statement)
+    if customer is not None:
+        if payload.customer_phone and customer.phone != payload.customer_phone.strip():
+            customer.phone = payload.customer_phone.strip()
+        return customer
+
+    customer = Customer(
+        agent_id=payload.agent_id,
+        name=payload.customer_name.strip(),
+        phone=payload.customer_phone.strip() if payload.customer_phone else None,
+    )
+    db.add(customer)
+    db.flush()
+    return customer
+
+
 @router.get("", response_model=list[SaleRead])
 def list_sales(
     agent_id: int | None = None,
@@ -42,7 +82,7 @@ def list_sales(
 ) -> list[SaleRead]:
     statement = (
         select(Sale)
-        .options(joinedload(Sale.agent), joinedload(Sale.product))
+        .options(joinedload(Sale.agent), joinedload(Sale.product), joinedload(Sale.customer))
         .order_by(Sale.sale_date.desc(), Sale.id.desc())
     )
 
@@ -60,17 +100,7 @@ def list_sales(
         statement = statement.where(Sale.sale_date <= date_to)
 
     sales = db.scalars(statement).unique().all()
-    return [
-        SaleRead(
-            **SaleRead.model_validate(sale).model_dump(
-                exclude={"agent_name", "product_name", "product_unit"}
-            ),
-            agent_name=sale.agent.name,
-            product_name=sale.product.name,
-            product_unit=sale.product.unit,
-        )
-        for sale in sales
-    ]
+    return [serialize_sale(sale) for sale in sales]
 
 
 @router.post("", response_model=SaleRead, status_code=status.HTTP_201_CREATED)
@@ -104,10 +134,14 @@ def create_sale(payload: SaleCreate, db: Session = Depends(get_db)) -> SaleRead:
     unit_cost = product.cost_price_hq
     total_amount = payload.quantity * resolved_unit_price
     total_cost = payload.quantity * unit_cost
+    customer = resolve_customer(db, payload)
 
     sale = Sale(
         agent_id=payload.agent_id,
         product_id=payload.product_id,
+        customer_id=customer.id if customer else None,
+        sale_type=payload.sale_type,
+        payment_method=payload.payment_method,
         quantity=payload.quantity,
         unit_price=resolved_unit_price,
         unit_cost=unit_cost,
@@ -121,15 +155,13 @@ def create_sale(payload: SaleCreate, db: Session = Depends(get_db)) -> SaleRead:
     agent.stock_quantity = sum(item.quantity for item in agent.inventory_items)
     db.commit()
     db.refresh(sale)
+    sale = db.scalar(
+        select(Sale)
+        .options(joinedload(Sale.agent), joinedload(Sale.product), joinedload(Sale.customer))
+        .where(Sale.id == sale.id)
+    ) or sale
 
-    return SaleRead(
-        **SaleRead.model_validate(sale).model_dump(
-            exclude={"agent_name", "product_name", "product_unit"}
-        ),
-        agent_name=agent.name,
-        product_name=product.name,
-        product_unit=product.unit,
-    )
+    return serialize_sale(sale)
 
 
 @router.delete("/{sale_id}", status_code=status.HTTP_204_NO_CONTENT)

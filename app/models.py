@@ -24,7 +24,12 @@ class Agent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    nickname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     phone: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
+    line_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    bank_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    bank_account_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    bank_account_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     agent_type: Mapped[str] = mapped_column(String(50), nullable=False, default=AGENT_TYPE_GENERAL)
     stock_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     stock_unit_price: Mapped[int] = mapped_column(
@@ -49,6 +54,9 @@ class Agent(Base):
     inventory_items: Mapped[list["AgentInventory"]] = relationship(
         "AgentInventory", back_populates="agent", cascade="all, delete-orphan"
     )
+    customers: Mapped[list["Customer"]] = relationship(
+        "Customer", back_populates="agent", cascade="all, delete-orphan"
+    )
     sales: Mapped[list["Sale"]] = relationship(
         "Sale", back_populates="agent", cascade="all, delete-orphan"
     )
@@ -60,6 +68,7 @@ class Product(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     unit: Mapped[str] = mapped_column(String(50), nullable=False)
+    company_stock_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cost_price_hq: Mapped[int] = mapped_column(Integer, nullable=False, default=550)
     default_price_retail: Mapped[int] = mapped_column(Integer, nullable=False, default=890)
     default_price_general: Mapped[int] = mapped_column(Integer, nullable=False, default=800)
@@ -110,12 +119,30 @@ class ProductRetailPriceTier(Base):
     product: Mapped["Product"] = relationship("Product", back_populates="retail_price_tiers")
 
 
+class Customer(Base):
+    __tablename__ = "customers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    agent: Mapped["Agent"] = relationship("Agent", back_populates="customers")
+    sales: Mapped[list["Sale"]] = relationship("Sale", back_populates="customer", cascade="save-update")
+
+
 class Sale(Base):
     __tablename__ = "sales"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"), nullable=False, index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("customers.id"), nullable=True, index=True)
+    sale_type: Mapped[str] = mapped_column(String(50), nullable=False, default="agent_pickup")
+    payment_method: Mapped[str] = mapped_column(String(50), nullable=False, default="transfer")
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_cost: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -129,3 +156,4 @@ class Sale(Base):
 
     agent: Mapped["Agent"] = relationship("Agent", back_populates="sales")
     product: Mapped["Product"] = relationship("Product", back_populates="sales")
+    customer: Mapped[Optional["Customer"]] = relationship("Customer", back_populates="sales")

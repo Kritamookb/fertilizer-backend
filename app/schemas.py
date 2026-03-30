@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.agent_types import AgentType, get_agent_unit_price
 
+SaleType = str
+PaymentMethod = str
+
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -40,6 +43,7 @@ class AdminUserRead(BaseModel):
 class ProductBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     unit: str = Field(min_length=1, max_length=50)
+    company_stock_quantity: int = Field(ge=0)
     cost_price_hq: int = Field(gt=0)
     default_price_retail: int = Field(gt=0)
     default_price_general: int = Field(gt=0)
@@ -62,6 +66,7 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     unit: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    company_stock_quantity: Optional[int] = Field(default=None, ge=0)
     cost_price_hq: Optional[int] = Field(default=None, gt=0)
     default_price_retail: Optional[int] = Field(default=None, gt=0)
     default_price_general: Optional[int] = Field(default=None, gt=0)
@@ -83,6 +88,8 @@ class ProductRead(ProductBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    agent_stock_quantity: int = 0
+    total_stock_quantity: int = 0
     retail_price_tiers: list["ProductRetailPriceTierRead"] = Field(default_factory=list)
 
 
@@ -123,11 +130,17 @@ class AgentInventoryRead(BaseModel):
     quantity: int
     unit_price: int
     is_commissionable: bool
+    company_stock_quantity: int
 
 
 class AgentBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
+    nickname: Optional[str] = Field(default=None, max_length=255)
     phone: str = Field(min_length=1, max_length=50)
+    line_id: Optional[str] = Field(default=None, max_length=100)
+    bank_name: Optional[str] = Field(default=None, max_length=255)
+    bank_account_name: Optional[str] = Field(default=None, max_length=255)
+    bank_account_number: Optional[str] = Field(default=None, max_length=100)
     agent_type: AgentType
     stock_quantity: int = Field(default=0, ge=0)
     stock_unit_price: int = Field(gt=0)
@@ -148,7 +161,12 @@ class AgentCreate(AgentBase):
 
 class AgentUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    nickname: Optional[str] = Field(default=None, max_length=255)
     phone: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    line_id: Optional[str] = Field(default=None, max_length=100)
+    bank_name: Optional[str] = Field(default=None, max_length=255)
+    bank_account_name: Optional[str] = Field(default=None, max_length=255)
+    bank_account_number: Optional[str] = Field(default=None, max_length=100)
     agent_type: Optional[AgentType] = None
     stock_quantity: Optional[int] = Field(default=None, ge=0)
     stock_unit_price: Optional[int] = Field(default=None, gt=0)
@@ -161,7 +179,12 @@ class AgentRead(BaseModel):
 
     id: int
     name: str
+    nickname: Optional[str] = None
     phone: str
+    line_id: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account_name: Optional[str] = None
+    bank_account_number: Optional[str] = None
     agent_type: AgentType
     stock_quantity: int
     stock_unit_price: int
@@ -178,8 +201,25 @@ class AgentListItem(AgentRead):
 class SaleBase(BaseModel):
     agent_id: int
     product_id: int
+    sale_type: SaleType
+    payment_method: PaymentMethod
     quantity: int = Field(gt=0)
     sale_date: date
+    customer_name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    customer_phone: Optional[str] = Field(default=None, min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def validate_customer_fields(self) -> "SaleBase":
+        if self.sale_type not in {"agent_pickup", "customer_purchase"}:
+            raise ValueError("ประเภทการเบิกไม่ถูกต้อง")
+        if self.payment_method not in {"transfer", "cash"}:
+            raise ValueError("วิธีจ่ายเงินไม่ถูกต้อง")
+        if self.sale_type == "customer_purchase" and not self.customer_name:
+            raise ValueError("กรุณากรอกชื่อลูกค้าเมื่อเป็นรายการลูกค้ามาเบิก")
+        if self.sale_type == "agent_pickup":
+            self.customer_name = None
+            self.customer_phone = None
+        return self
 
 
 class SaleCreate(SaleBase):
@@ -192,6 +232,9 @@ class SaleRead(BaseModel):
     id: int
     agent_id: int
     product_id: int
+    customer_id: Optional[int] = None
+    sale_type: SaleType
+    payment_method: PaymentMethod
     quantity: int
     unit_price: int
     unit_cost: int
@@ -203,6 +246,8 @@ class SaleRead(BaseModel):
     agent_name: Optional[str] = None
     product_name: Optional[str] = None
     product_unit: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
 
 
 class AgentDetail(AgentRead):
