@@ -133,6 +133,17 @@ class AgentInventoryRead(BaseModel):
     company_stock_quantity: int
 
 
+class StockTransferRead(BaseModel):
+    id: int
+    product_id: int
+    product_name: str
+    product_unit: str
+    quantity: int
+    direction: str
+    reason: str
+    created_at: datetime
+
+
 class AgentBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     nickname: Optional[str] = Field(default=None, max_length=255)
@@ -254,6 +265,7 @@ class AgentDetail(AgentRead):
     referrer_name: Optional[str] = None
     direct_referrals: list[AgentRead]
     inventory_items: list[AgentInventoryRead]
+    stock_transfers: list[StockTransferRead] = Field(default_factory=list)
     sales_history: list[SaleRead]
 
 

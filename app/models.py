@@ -60,6 +60,9 @@ class Agent(Base):
     sales: Mapped[list["Sale"]] = relationship(
         "Sale", back_populates="agent", cascade="all, delete-orphan"
     )
+    stock_transfers: Mapped[list["StockTransfer"]] = relationship(
+        "StockTransfer", back_populates="agent", cascade="all, delete-orphan"
+    )
 
 
 class Product(Base):
@@ -89,6 +92,9 @@ class Product(Base):
     sales: Mapped[list["Sale"]] = relationship(
         "Sale", back_populates="product", cascade="save-update"
     )
+    stock_transfers: Mapped[list["StockTransfer"]] = relationship(
+        "StockTransfer", back_populates="product", cascade="save-update"
+    )
 
 
 class AgentInventory(Base):
@@ -103,6 +109,23 @@ class AgentInventory(Base):
 
     agent: Mapped["Agent"] = relationship("Agent", back_populates="inventory_items")
     product: Mapped["Product"] = relationship("Product", back_populates="inventory_items")
+
+
+class StockTransfer(Base):
+    __tablename__ = "stock_transfers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"), nullable=False, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    direction: Mapped[str] = mapped_column(String(50), nullable=False)
+    reason: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    agent: Mapped["Agent"] = relationship("Agent", back_populates="stock_transfers")
+    product: Mapped["Product"] = relationship("Product", back_populates="stock_transfers")
 
 
 class ProductRetailPriceTier(Base):

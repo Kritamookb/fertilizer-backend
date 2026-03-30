@@ -8,7 +8,7 @@ from app.agent_types import AGENT_TYPE_SUB_CENTER, get_agent_unit_price
 from app.auth import get_current_admin
 from app.config import get_settings
 from app.database import get_db
-from app.models import Agent, AgentInventory, Product, Sale
+from app.models import Agent, AgentInventory, Product, Sale, StockTransfer
 from app.schemas import (
     AgentCreate,
     AgentDetail,
@@ -18,6 +18,7 @@ from app.schemas import (
     AgentRead,
     AgentUpdate,
     SaleRead,
+    StockTransferRead,
 )
 
 router = APIRouter(prefix="/agents", tags=["agents"], dependencies=[Depends(get_current_admin)])
@@ -99,6 +100,16 @@ def build_inventory_rows(
             )
         )
         product.company_stock_quantity -= quantity
+        if quantity > 0:
+            db.add(
+                StockTransfer(
+                    agent=agent,
+                    product_id=product.id,
+                    quantity=quantity,
+                    direction="company_to_agent",
+                    reason="initial_stock",
+                )
+            )
     return rows
 
 
@@ -114,6 +125,22 @@ def serialize_inventory_items(items: list[AgentInventory]) -> list[AgentInventor
             company_stock_quantity=item.product.company_stock_quantity,
         )
         for item in sorted(items, key=lambda entry: (entry.product.name.lower(), entry.product_id))
+    ]
+
+
+def serialize_stock_transfers(items: list[StockTransfer]) -> list[StockTransferRead]:
+    return [
+        StockTransferRead(
+            id=item.id,
+            product_id=item.product_id,
+            product_name=item.product.name,
+            product_unit=item.product.unit,
+            quantity=item.quantity,
+            direction=item.direction,
+            reason=item.reason,
+            created_at=item.created_at,
+        )
+        for item in sorted(items, key=lambda entry: (entry.created_at, entry.id), reverse=True)
     ]
 
 
@@ -154,8 +181,26 @@ def sync_inventory_with_company_stock(
                     detail=f"สต็อกบริษัทของ {product.name} ไม่เพียงพอ",
                 )
             product.company_stock_quantity -= delta
+            db.add(
+                StockTransfer(
+                    agent_id=agent.id,
+                    product_id=product.id,
+                    quantity=delta,
+                    direction="company_to_agent",
+                    reason="inventory_adjustment",
+                )
+            )
         elif delta < 0:
             product.company_stock_quantity += -delta
+            db.add(
+                StockTransfer(
+                    agent_id=agent.id,
+                    product_id=product.id,
+                    quantity=-delta,
+                    direction="agent_to_company",
+                    reason="inventory_adjustment",
+                )
+            )
 
         inventory_item.quantity = item.quantity
 
@@ -251,7 +296,11 @@ def create_agent(payload: AgentCreate, db: Session = Depends(get_db)) -> Agent:
 def get_agent(agent_id: int, db: Session = Depends(get_db)) -> AgentDetail:
     agent = db.scalar(
         select(Agent)
-        .options(joinedload(Agent.referrer), joinedload(Agent.inventory_items).joinedload(AgentInventory.product))
+        .options(
+            joinedload(Agent.referrer),
+            joinedload(Agent.inventory_items).joinedload(AgentInventory.product),
+            joinedload(Agent.stock_transfers).joinedload(StockTransfer.product),
+        )
         .where(Agent.id == agent_id)
     )
     if agent is None:
@@ -285,6 +334,7 @@ def get_agent(agent_id: int, db: Session = Depends(get_db)) -> AgentDetail:
         referrer_name=agent.referrer.name if agent.referrer else None,
         direct_referrals=[AgentRead.model_validate(item) for item in direct_referrals],
         inventory_items=serialize_inventory_items(agent.inventory_items),
+        stock_transfers=serialize_stock_transfers(agent.stock_transfers),
         sales_history=sales_history,
     )
 
