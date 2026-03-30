@@ -4,7 +4,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth import get_current_admin
 from app.database import get_db
@@ -22,6 +22,14 @@ def parse_week(week: str) -> tuple[date, date]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="รูปแบบสัปดาห์ไม่ถูกต้อง") from exc
 
     return week_start, date.fromisocalendar(int(year_str), int(week_str), 7)
+
+
+def resolve_retail_unit_price(product: Product, quantity: int) -> int:
+    resolved_price = product.default_price_retail
+    for tier in sorted(product.retail_price_tiers, key=lambda item: item.min_quantity):
+        if quantity >= tier.min_quantity:
+            resolved_price = tier.unit_price
+    return resolved_price
 
 
 @router.get("", response_model=list[SaleRead])
@@ -75,7 +83,11 @@ def create_sale(payload: SaleCreate, db: Session = Depends(get_db)) -> SaleRead:
     if agent is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบตัวแทน")
 
-    product = db.get(Product, payload.product_id)
+    product = db.scalar(
+        select(Product)
+        .options(selectinload(Product.retail_price_tiers))
+        .where(Product.id == payload.product_id)
+    )
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบสินค้า")
 
@@ -88,7 +100,22 @@ def create_sale(payload: SaleCreate, db: Session = Depends(get_db)) -> SaleRead:
     if inventory_item.quantity < payload.quantity:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="สต๊อกสินค้าไม่เพียงพอ")
 
-    sale = Sale(**payload.model_dump())
+    resolved_unit_price = payload.unit_price or resolve_retail_unit_price(product, payload.quantity)
+    unit_cost = product.cost_price_hq
+    total_amount = payload.quantity * resolved_unit_price
+    total_cost = payload.quantity * unit_cost
+
+    sale = Sale(
+        agent_id=payload.agent_id,
+        product_id=payload.product_id,
+        quantity=payload.quantity,
+        unit_price=resolved_unit_price,
+        unit_cost=unit_cost,
+        total_amount=total_amount,
+        total_cost=total_cost,
+        gross_profit=total_amount - total_cost,
+        sale_date=payload.sale_date,
+    )
     db.add(sale)
     inventory_item.quantity -= payload.quantity
     agent.stock_quantity = sum(item.quantity for item in agent.inventory_items)

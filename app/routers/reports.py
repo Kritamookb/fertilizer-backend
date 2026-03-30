@@ -85,6 +85,9 @@ def summary_report(db: Session = Depends(get_db)) -> SummaryReportResponse:
             Agent.id,
             Agent.name,
             func.coalesce(func.sum(Sale.quantity), 0).label("total_quantity"),
+            func.coalesce(func.sum(Sale.total_amount), 0).label("total_amount"),
+            func.coalesce(func.sum(Sale.total_cost), 0).label("total_cost"),
+            func.coalesce(func.sum(Sale.gross_profit), 0).label("gross_profit"),
         )
         .select_from(Agent)
         .outerjoin(Sale, Sale.agent_id == Agent.id)
@@ -98,6 +101,9 @@ def summary_report(db: Session = Depends(get_db)) -> SummaryReportResponse:
             Product.name,
             Product.unit,
             func.coalesce(func.sum(Sale.quantity), 0).label("total_quantity"),
+            func.coalesce(func.sum(Sale.total_amount), 0).label("total_amount"),
+            func.coalesce(func.sum(Sale.total_cost), 0).label("total_cost"),
+            func.coalesce(func.sum(Sale.gross_profit), 0).label("gross_profit"),
         )
         .select_from(Product)
         .outerjoin(Sale, Sale.product_id == Product.id)
@@ -106,16 +112,32 @@ def summary_report(db: Session = Depends(get_db)) -> SummaryReportResponse:
     ).all()
 
     total_sales_quantity = db.scalar(select(func.coalesce(func.sum(Sale.quantity), 0)).select_from(Sale)) or 0
+    total_amount = db.scalar(select(func.coalesce(func.sum(Sale.total_amount), 0)).select_from(Sale)) or 0
+    total_cost = db.scalar(select(func.coalesce(func.sum(Sale.total_cost), 0)).select_from(Sale)) or 0
+    gross_profit = db.scalar(select(func.coalesce(func.sum(Sale.gross_profit), 0)).select_from(Sale)) or 0
 
     return SummaryReportResponse(
         total_sales_quantity=int(total_sales_quantity),
+        total_amount=int(total_amount),
+        total_cost=int(total_cost),
+        gross_profit=int(gross_profit),
         by_agent=[
             SummaryByAgentItem(
                 agent_id=agent_id,
                 agent_name=agent_name,
                 total_quantity=int(total_quantity or 0),
+                total_amount=int(agent_total_amount or 0),
+                total_cost=int(agent_total_cost or 0),
+                gross_profit=int(agent_gross_profit or 0),
             )
-            for agent_id, agent_name, total_quantity in by_agent_rows
+            for (
+                agent_id,
+                agent_name,
+                total_quantity,
+                agent_total_amount,
+                agent_total_cost,
+                agent_gross_profit,
+            ) in by_agent_rows
         ],
         by_product=[
             SummaryByProductItem(
@@ -123,7 +145,18 @@ def summary_report(db: Session = Depends(get_db)) -> SummaryReportResponse:
                 product_name=product_name,
                 unit=unit,
                 total_quantity=int(total_quantity or 0),
+                total_amount=int(product_total_amount or 0),
+                total_cost=int(product_total_cost or 0),
+                gross_profit=int(product_gross_profit or 0),
             )
-            for product_id, product_name, unit, total_quantity in by_product_rows
+            for (
+                product_id,
+                product_name,
+                unit,
+                total_quantity,
+                product_total_amount,
+                product_total_cost,
+                product_gross_profit,
+            ) in by_product_rows
         ],
     )

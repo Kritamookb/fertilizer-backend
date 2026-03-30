@@ -6,7 +6,7 @@ FastAPI backend for the fertilizer membership and single-level commission system
 
 1. Create a virtual environment and install dependencies:
    `pip install -r requirements.txt`
-2. Copy `.env.example` to `.env` and update the values.
+2. Copy `.env.example` to `.env` and update the PostgreSQL connection values.
 3. Run migrations:
    `alembic upgrade head`
 4. Start the API:
@@ -21,5 +21,4 @@ FastAPI backend for the fertilizer membership and single-level commission system
 ## Default seeded data
 
 - Admin user from `.env`: `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`
-- Products: `ปุ๋ย A`, `ปุ๋ย B`, `ปุ๋ย C` (default to commissionable)
 - Each product has default prices for `general` and `sub_center` agent types

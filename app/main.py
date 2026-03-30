@@ -13,30 +13,17 @@ from app.seed import seed_initial_data
 settings = get_settings()
 
 
-def ensure_sqlite_agent_columns() -> None:
-    if not settings.database_url.startswith("sqlite"):
-        return
-
+def ensure_columns(table_name: str, statements_by_column: dict[str, str]) -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
-    if "agents" not in table_names:
+    if table_name not in table_names:
         return
 
-    column_names = {column["name"] for column in inspector.get_columns("agents")}
+    column_names = {column["name"] for column in inspector.get_columns(table_name)}
     statements: list[str] = []
-
-    if "agent_type" not in column_names:
-        statements.append(
-            "ALTER TABLE agents ADD COLUMN agent_type VARCHAR(50) NOT NULL DEFAULT 'general'"
-        )
-    if "stock_quantity" not in column_names:
-        statements.append(
-            "ALTER TABLE agents ADD COLUMN stock_quantity INTEGER NOT NULL DEFAULT 0"
-        )
-    if "stock_unit_price" not in column_names:
-        statements.append(
-            f"ALTER TABLE agents ADD COLUMN stock_unit_price INTEGER NOT NULL DEFAULT {get_agent_unit_price(AGENT_TYPE_GENERAL)}"
-        )
+    for column_name, statement in statements_by_column.items():
+        if column_name not in column_names:
+            statements.append(statement)
 
     if not statements:
         return
@@ -46,45 +33,49 @@ def ensure_sqlite_agent_columns() -> None:
             connection.execute(text(statement))
 
 
-def ensure_sqlite_product_columns() -> None:
-    if not settings.database_url.startswith("sqlite"):
-        return
+def ensure_agent_columns() -> None:
+    ensure_columns(
+        "agents",
+        {
+            "agent_type": "ALTER TABLE agents ADD COLUMN agent_type VARCHAR(50) NOT NULL DEFAULT 'general'",
+            "stock_quantity": "ALTER TABLE agents ADD COLUMN stock_quantity INTEGER NOT NULL DEFAULT 0",
+            "stock_unit_price": f"ALTER TABLE agents ADD COLUMN stock_unit_price INTEGER NOT NULL DEFAULT {get_agent_unit_price(AGENT_TYPE_GENERAL)}",
+        },
+    )
 
-    inspector = inspect(engine)
-    table_names = set(inspector.get_table_names())
-    if "products" not in table_names:
-        return
 
-    column_names = {column["name"] for column in inspector.get_columns("products")}
-    statements: list[str] = []
+def ensure_product_columns() -> None:
+    ensure_columns(
+        "products",
+        {
+            "is_commissionable": "ALTER TABLE products ADD COLUMN is_commissionable BOOLEAN NOT NULL DEFAULT 1",
+            "cost_price_hq": "ALTER TABLE products ADD COLUMN cost_price_hq INTEGER NOT NULL DEFAULT 550",
+            "default_price_retail": "ALTER TABLE products ADD COLUMN default_price_retail INTEGER NOT NULL DEFAULT 890",
+            "default_price_general": "ALTER TABLE products ADD COLUMN default_price_general INTEGER NOT NULL DEFAULT 800",
+            "default_price_sub_center": "ALTER TABLE products ADD COLUMN default_price_sub_center INTEGER NOT NULL DEFAULT 770",
+        },
+    )
 
-    if "is_commissionable" not in column_names:
-        statements.append(
-            "ALTER TABLE products ADD COLUMN is_commissionable BOOLEAN NOT NULL DEFAULT 1"
-        )
-    if "default_price_general" not in column_names:
-        statements.append(
-            "ALTER TABLE products ADD COLUMN default_price_general INTEGER NOT NULL DEFAULT 800"
-        )
-    if "default_price_sub_center" not in column_names:
-        statements.append(
-            "ALTER TABLE products ADD COLUMN default_price_sub_center INTEGER NOT NULL DEFAULT 770"
-        )
 
-    if not statements:
-        return
-
-    with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
+def ensure_sale_columns() -> None:
+    ensure_columns(
+        "sales",
+        {
+            "unit_price": "ALTER TABLE sales ADD COLUMN unit_price INTEGER NOT NULL DEFAULT 800",
+            "unit_cost": "ALTER TABLE sales ADD COLUMN unit_cost INTEGER NOT NULL DEFAULT 550",
+            "total_amount": "ALTER TABLE sales ADD COLUMN total_amount INTEGER NOT NULL DEFAULT 0",
+            "total_cost": "ALTER TABLE sales ADD COLUMN total_cost INTEGER NOT NULL DEFAULT 0",
+            "gross_profit": "ALTER TABLE sales ADD COLUMN gross_profit INTEGER NOT NULL DEFAULT 0",
+        },
+    )
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if settings.database_url.startswith("sqlite"):
-        Base.metadata.create_all(bind=engine)
-        ensure_sqlite_agent_columns()
-        ensure_sqlite_product_columns()
+    Base.metadata.create_all(bind=engine)
+    ensure_agent_columns()
+    ensure_product_columns()
+    ensure_sale_columns()
     with SessionLocal() as db:
         seed_initial_data(db)
     yield

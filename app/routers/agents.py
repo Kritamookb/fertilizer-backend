@@ -123,27 +123,44 @@ def get_inventory_price_for_agent_type(product: Product, agent_type: str) -> int
 @router.get("", response_model=list[AgentListItem])
 def list_agents(db: Session = Depends(get_db)) -> list[AgentListItem]:
     referrer = aliased(Agent)
-    teammate = aliased(Agent)
+    team_size_subquery = (
+        select(
+            Agent.referred_by_id.label("agent_id"),
+            func.count(Agent.id).label("team_size"),
+        )
+        .where(Agent.referred_by_id.is_not(None))
+        .group_by(Agent.referred_by_id)
+        .subquery()
+    )
+    stock_quantity_subquery = (
+        select(
+            AgentInventory.agent_id.label("agent_id"),
+            func.coalesce(func.sum(AgentInventory.quantity), 0).label("stock_quantity"),
+        )
+        .group_by(AgentInventory.agent_id)
+        .subquery()
+    )
     statement = (
         select(
             Agent,
             referrer.name.label("referrer_name"),
-            func.count(teammate.id).label("team_size"),
+            func.coalesce(team_size_subquery.c.team_size, 0).label("team_size"),
+            func.coalesce(stock_quantity_subquery.c.stock_quantity, 0).label("stock_quantity"),
         )
         .outerjoin(referrer, Agent.referred_by_id == referrer.id)
-        .outerjoin(teammate, teammate.referred_by_id == Agent.id)
-        .group_by(Agent.id, referrer.name)
+        .outerjoin(team_size_subquery, team_size_subquery.c.agent_id == Agent.id)
+        .outerjoin(stock_quantity_subquery, stock_quantity_subquery.c.agent_id == Agent.id)
         .order_by(Agent.created_at.desc(), Agent.id.desc())
     )
     rows = db.execute(statement).all()
 
     return [
         AgentListItem(
-            **AgentRead.model_validate(agent).model_dump(),
+            **(AgentRead.model_validate(agent).model_dump() | {"stock_quantity": stock_quantity}),
             referrer_name=referrer_name,
             team_size=team_size,
         )
-        for agent, referrer_name, team_size in rows
+        for agent, referrer_name, team_size, stock_quantity in rows
     ]
 
 
@@ -171,8 +188,7 @@ def create_agent(payload: AgentCreate, db: Session = Depends(get_db)) -> Agent:
         referred_by_id=payload.referred_by_id,
         is_active=payload.is_active,
     )
-    inventory_rows = build_inventory_rows(db, agent, payload.inventory_items)
-    agent.inventory_items.extend(inventory_rows)
+    build_inventory_rows(db, agent, payload.inventory_items)
     sync_agent_stock_quantity(agent)
     db.add(agent)
     db.commit()

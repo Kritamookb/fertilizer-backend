@@ -40,9 +40,19 @@ class AdminUserRead(BaseModel):
 class ProductBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     unit: str = Field(min_length=1, max_length=50)
+    cost_price_hq: int = Field(gt=0)
+    default_price_retail: int = Field(gt=0)
     default_price_general: int = Field(gt=0)
     default_price_sub_center: int = Field(gt=0)
     is_commissionable: bool = True
+    retail_price_tiers: list["ProductRetailPriceTierCreate"] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_bulk_retail_pricing(self) -> "ProductBase":
+        min_quantities = [tier.min_quantity for tier in self.retail_price_tiers]
+        if len(min_quantities) != len(set(min_quantities)):
+            raise ValueError("จำนวนขั้นต่ำของราคาปลีกพิเศษต้องไม่ซ้ำกัน")
+        return self
 
 
 class ProductCreate(ProductBase):
@@ -52,12 +62,40 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     unit: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    cost_price_hq: Optional[int] = Field(default=None, gt=0)
+    default_price_retail: Optional[int] = Field(default=None, gt=0)
     default_price_general: Optional[int] = Field(default=None, gt=0)
     default_price_sub_center: Optional[int] = Field(default=None, gt=0)
     is_commissionable: Optional[bool] = None
+    retail_price_tiers: Optional[list["ProductRetailPriceTierCreate"]] = None
+
+    @model_validator(mode="after")
+    def validate_bulk_retail_pricing(self) -> "ProductUpdate":
+        if self.retail_price_tiers is None:
+            return self
+        min_quantities = [tier.min_quantity for tier in self.retail_price_tiers]
+        if len(min_quantities) != len(set(min_quantities)):
+            raise ValueError("จำนวนขั้นต่ำของราคาปลีกพิเศษต้องไม่ซ้ำกัน")
+        return self
 
 
 class ProductRead(ProductBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    retail_price_tiers: list["ProductRetailPriceTierRead"] = Field(default_factory=list)
+
+
+class ProductRetailPriceTierBase(BaseModel):
+    min_quantity: int = Field(gt=0)
+    unit_price: int = Field(gt=0)
+
+
+class ProductRetailPriceTierCreate(ProductRetailPriceTierBase):
+    pass
+
+
+class ProductRetailPriceTierRead(ProductRetailPriceTierBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -145,7 +183,7 @@ class SaleBase(BaseModel):
 
 
 class SaleCreate(SaleBase):
-    pass
+    unit_price: Optional[int] = Field(default=None, gt=0)
 
 
 class SaleRead(BaseModel):
@@ -155,6 +193,11 @@ class SaleRead(BaseModel):
     agent_id: int
     product_id: int
     quantity: int
+    unit_price: int
+    unit_cost: int
+    total_amount: int
+    total_cost: int
+    gross_profit: int
     sale_date: date
     created_at: datetime
     agent_name: Optional[str] = None
@@ -192,6 +235,9 @@ class SummaryByAgentItem(BaseModel):
     agent_id: int
     agent_name: str
     total_quantity: int
+    total_amount: int
+    total_cost: int
+    gross_profit: int
 
 
 class SummaryByProductItem(BaseModel):
@@ -199,9 +245,15 @@ class SummaryByProductItem(BaseModel):
     product_name: str
     unit: str
     total_quantity: int
+    total_amount: int
+    total_cost: int
+    gross_profit: int
 
 
 class SummaryReportResponse(BaseModel):
     total_sales_quantity: int
+    total_amount: int
+    total_cost: int
+    gross_profit: int
     by_agent: list[SummaryByAgentItem]
     by_product: list[SummaryByProductItem]

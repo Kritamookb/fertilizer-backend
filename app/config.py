@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     api_prefix: str = ""
     debug: bool = False
 
-    database_url: str = "sqlite:///./fertilizer.db"
+    database_url: str = Field(..., description="PostgreSQL connection URL")
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24
@@ -38,6 +38,13 @@ class Settings(BaseSettings):
             "http://fertilizer.connect2play.site",
         ]
     )
+
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, value: str) -> str:
+        if not value.startswith(("postgresql://", "postgresql+psycopg://")):
+            raise ValueError("DATABASE_URL must be a PostgreSQL connection string")
+        return value
 
 
 @lru_cache

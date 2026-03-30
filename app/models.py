@@ -60,10 +60,18 @@ class Product(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     unit: Mapped[str] = mapped_column(String(50), nullable=False)
+    cost_price_hq: Mapped[int] = mapped_column(Integer, nullable=False, default=550)
+    default_price_retail: Mapped[int] = mapped_column(Integer, nullable=False, default=890)
     default_price_general: Mapped[int] = mapped_column(Integer, nullable=False, default=800)
     default_price_sub_center: Mapped[int] = mapped_column(Integer, nullable=False, default=770)
     is_commissionable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=func.true()
+    )
+    retail_price_tiers: Mapped[list["ProductRetailPriceTier"]] = relationship(
+        "ProductRetailPriceTier",
+        back_populates="product",
+        cascade="all, delete-orphan",
+        order_by="ProductRetailPriceTier.min_quantity",
     )
 
     inventory_items: Mapped[list["AgentInventory"]] = relationship(
@@ -88,6 +96,20 @@ class AgentInventory(Base):
     product: Mapped["Product"] = relationship("Product", back_populates="inventory_items")
 
 
+class ProductRetailPriceTier(Base):
+    __tablename__ = "product_retail_price_tiers"
+    __table_args__ = (
+        UniqueConstraint("product_id", "min_quantity", name="uq_product_retail_price_tier_quantity"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
+    min_quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit_price: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    product: Mapped["Product"] = relationship("Product", back_populates="retail_price_tiers")
+
+
 class Sale(Base):
     __tablename__ = "sales"
 
@@ -95,6 +117,11 @@ class Sale(Base):
     agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"), nullable=False, index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit_price: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit_cost: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_cost: Mapped[int] = mapped_column(Integer, nullable=False)
+    gross_profit: Mapped[int] = mapped_column(Integer, nullable=False)
     sale_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

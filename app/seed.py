@@ -1,9 +1,9 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import get_password_hash
 from app.config import get_settings
-from app.models import AdminUser, Agent, AgentInventory, Product
+from app.models import AdminUser, Agent, AgentInventory, Product, Sale
 
 settings = get_settings()
 
@@ -19,20 +19,6 @@ def seed_initial_data(db: Session) -> None:
             )
         )
 
-    product_names = {"ปุ๋ย A", "ปุ๋ย B", "ปุ๋ย C"}
-    existing_products = set(db.scalars(select(Product.name)).all())
-    missing_products = product_names - existing_products
-    for product_name in sorted(missing_products):
-        db.add(
-            Product(
-                name=product_name,
-                unit="กระสอบ",
-                default_price_general=800,
-                default_price_sub_center=770,
-                is_commissionable=True,
-            )
-        )
-
     db.flush()
 
     products = list(db.scalars(select(Product).order_by(Product.id.asc())).all())
@@ -44,20 +30,15 @@ def seed_initial_data(db: Session) -> None:
         ).all()
     }
     for agent in agents:
-        legacy_stock_assigned = False
         for product in products:
             pair = (agent.id, product.id)
             if pair in existing_inventory_pairs:
                 continue
-            quantity = 0
-            if not legacy_stock_assigned and agent.stock_quantity > 0:
-                quantity = agent.stock_quantity
-                legacy_stock_assigned = True
             db.add(
                 AgentInventory(
                     agent_id=agent.id,
                     product_id=product.id,
-                    quantity=quantity,
+                    quantity=0,
                     unit_price=(
                         product.default_price_sub_center
                         if agent.agent_type == "sub_center"
@@ -65,5 +46,46 @@ def seed_initial_data(db: Session) -> None:
                     ),
                 )
             )
+
+    db.flush()
+
+    inventory_totals = {
+        agent_id: total_quantity
+        for agent_id, total_quantity in db.execute(
+            select(
+                Agent.id,
+                func.coalesce(func.sum(AgentInventory.quantity), 0),
+            )
+            .outerjoin(AgentInventory, AgentInventory.agent_id == Agent.id)
+            .group_by(Agent.id)
+        ).all()
+    }
+    for agent in agents:
+        agent.stock_quantity = inventory_totals.get(agent.id, 0)
+
+    sales = list(
+        db.scalars(
+            select(Sale)
+            .order_by(Sale.id.asc())
+        ).all()
+    )
+    products_by_id = {product.id: product for product in products}
+    agents_by_id = {agent.id: agent for agent in agents}
+    for sale in sales:
+        product = products_by_id.get(sale.product_id)
+        agent = agents_by_id.get(sale.agent_id)
+        if product is None or agent is None:
+            continue
+
+        if sale.total_amount <= 0 or sale.total_cost <= 0:
+            sale.unit_price = (
+                product.default_price_sub_center
+                if agent.agent_type == "sub_center"
+                else product.default_price_general
+            )
+            sale.unit_cost = product.cost_price_hq
+            sale.total_amount = sale.quantity * sale.unit_price
+            sale.total_cost = sale.quantity * sale.unit_cost
+            sale.gross_profit = sale.total_amount - sale.total_cost
 
     db.commit()
