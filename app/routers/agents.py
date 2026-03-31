@@ -270,11 +270,17 @@ def create_agent(payload: AgentCreate, db: Session = Depends(get_db)) -> Agent:
     duplicate_phone = db.scalar(select(Agent).where(Agent.phone == payload.phone))
     if duplicate_phone is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="เบอร์โทรนี้ถูกใช้งานแล้ว")
+    if payload.agent_code:
+        duplicate_agent_code = db.scalar(select(Agent).where(Agent.agent_code == payload.agent_code))
+        if duplicate_agent_code is not None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="รหัสตัวแทนนี้ถูกใช้งานแล้ว")
 
     agent = Agent(
+        agent_code=payload.agent_code,
         name=payload.name,
         nickname=payload.nickname,
         phone=payload.phone,
+        address=payload.address,
         line_id=payload.line_id,
         bank_name=payload.bank_name,
         bank_account_name=payload.bank_account_name,
@@ -355,6 +361,17 @@ def update_agent(agent_id: int, payload: AgentUpdate, db: Session = Depends(get_
         duplicate_phone = db.scalar(select(Agent).where(Agent.phone == update_data["phone"]))
         if duplicate_phone is not None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="เบอร์โทรนี้ถูกใช้งานแล้ว")
+    if "agent_code" in update_data and update_data["agent_code"] != agent.agent_code:
+        next_agent_code = update_data["agent_code"]
+        if next_agent_code:
+            duplicate_agent_code = db.scalar(
+                select(Agent).where(Agent.agent_code == next_agent_code, Agent.id != agent_id)
+            )
+            if duplicate_agent_code is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="รหัสตัวแทนนี้ถูกใช้งานแล้ว",
+                )
 
     if "referred_by_id" in update_data:
         ensure_referrer_exists(db, update_data["referred_by_id"])

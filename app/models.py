@@ -23,9 +23,11 @@ class Agent(Base):
     __tablename__ = "agents"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    agent_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     nickname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     phone: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
+    address: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     line_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     bank_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     bank_account_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

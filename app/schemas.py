@@ -145,9 +145,11 @@ class StockTransferRead(BaseModel):
 
 
 class AgentBase(BaseModel):
+    agent_code: Optional[str] = Field(default=None, max_length=100)
     name: str = Field(min_length=1, max_length=255)
     nickname: Optional[str] = Field(default=None, max_length=255)
     phone: str = Field(min_length=1, max_length=50)
+    address: Optional[str] = Field(default=None, max_length=1000)
     line_id: Optional[str] = Field(default=None, max_length=100)
     bank_name: Optional[str] = Field(default=None, max_length=255)
     bank_account_name: Optional[str] = Field(default=None, max_length=255)
@@ -171,9 +173,11 @@ class AgentCreate(AgentBase):
 
 
 class AgentUpdate(BaseModel):
+    agent_code: Optional[str] = Field(default=None, max_length=100)
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     nickname: Optional[str] = Field(default=None, max_length=255)
     phone: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    address: Optional[str] = Field(default=None, max_length=1000)
     line_id: Optional[str] = Field(default=None, max_length=100)
     bank_name: Optional[str] = Field(default=None, max_length=255)
     bank_account_name: Optional[str] = Field(default=None, max_length=255)
@@ -189,9 +193,11 @@ class AgentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    agent_code: Optional[str] = None
     name: str
     nickname: Optional[str] = None
     phone: str
+    address: Optional[str] = None
     line_id: Optional[str] = None
     bank_name: Optional[str] = None
     bank_account_name: Optional[str] = None

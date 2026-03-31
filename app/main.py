@@ -33,11 +33,33 @@ def ensure_columns(table_name: str, statements_by_column: dict[str, str]) -> Non
             connection.execute(text(statement))
 
 
+def ensure_indexes(table_name: str, statements_by_index: dict[str, str]) -> None:
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if table_name not in table_names:
+        return
+
+    index_names = {index["name"] for index in inspector.get_indexes(table_name)}
+    statements: list[str] = []
+    for index_name, statement in statements_by_index.items():
+        if index_name not in index_names:
+            statements.append(statement)
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 def ensure_agent_columns() -> None:
     ensure_columns(
         "agents",
         {
+            "agent_code": "ALTER TABLE agents ADD COLUMN agent_code VARCHAR(100) NULL",
             "nickname": "ALTER TABLE agents ADD COLUMN nickname VARCHAR(255) NULL",
+            "address": "ALTER TABLE agents ADD COLUMN address VARCHAR(1000) NULL",
             "agent_type": "ALTER TABLE agents ADD COLUMN agent_type VARCHAR(50) NOT NULL DEFAULT 'general'",
             "line_id": "ALTER TABLE agents ADD COLUMN line_id VARCHAR(100) NULL",
             "bank_name": "ALTER TABLE agents ADD COLUMN bank_name VARCHAR(255) NULL",
@@ -45,6 +67,12 @@ def ensure_agent_columns() -> None:
             "bank_account_number": "ALTER TABLE agents ADD COLUMN bank_account_number VARCHAR(100) NULL",
             "stock_quantity": "ALTER TABLE agents ADD COLUMN stock_quantity INTEGER NOT NULL DEFAULT 0",
             "stock_unit_price": f"ALTER TABLE agents ADD COLUMN stock_unit_price INTEGER NOT NULL DEFAULT {get_agent_unit_price(AGENT_TYPE_GENERAL)}",
+        },
+    )
+    ensure_indexes(
+        "agents",
+        {
+            "ix_agents_agent_code": "CREATE UNIQUE INDEX ix_agents_agent_code ON agents (agent_code)",
         },
     )
 
