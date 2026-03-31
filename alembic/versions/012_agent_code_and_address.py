@@ -1,7 +1,7 @@
 """add agent code and address fields
 
-Revision ID: 012_agent_code_and_address
-Revises: 011_agent_profile_fields
+Revision ID: 013
+Revises: 012
 Create Date: 2026-03-31 00:00:00.000000
 """
 
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = "012_agent_code_and_address"
-down_revision = "011_agent_profile_fields"
+revision = "013"
+down_revision = "012"
 branch_labels = None
 depends_on = None
 
