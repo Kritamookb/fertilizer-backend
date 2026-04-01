@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth import get_current_admin
 from app.database import get_db
-from app.models import Agent, AgentInventory, Customer, Product, Sale
+from app.models import Agent, Customer, Product, Sale
 from app.schemas import SaleCreate, SaleRead
 
 router = APIRouter(prefix="/sales", tags=["sales"], dependencies=[Depends(get_current_admin)])
@@ -107,7 +107,6 @@ def list_sales(
 def create_sale(payload: SaleCreate, db: Session = Depends(get_db)) -> SaleRead:
     agent = db.scalar(
         select(Agent)
-        .options(joinedload(Agent.inventory_items))
         .where(Agent.id == payload.agent_id)
     )
     if agent is None:
@@ -121,13 +120,7 @@ def create_sale(payload: SaleCreate, db: Session = Depends(get_db)) -> SaleRead:
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบสินค้า")
 
-    inventory_item = next(
-        (item for item in agent.inventory_items if item.product_id == payload.product_id),
-        None,
-    )
-    if inventory_item is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบสต๊อกสินค้าของตัวแทน")
-    if inventory_item.quantity < payload.quantity:
+    if product.company_stock_quantity < payload.quantity:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="สต๊อกสินค้าไม่เพียงพอ")
 
     resolved_unit_price = payload.unit_price or resolve_retail_unit_price(product, payload.quantity)
@@ -151,8 +144,7 @@ def create_sale(payload: SaleCreate, db: Session = Depends(get_db)) -> SaleRead:
         sale_date=payload.sale_date,
     )
     db.add(sale)
-    inventory_item.quantity -= payload.quantity
-    agent.stock_quantity = sum(item.quantity for item in agent.inventory_items)
+    product.company_stock_quantity -= payload.quantity
     db.commit()
     db.refresh(sale)
     sale = db.scalar(
@@ -170,20 +162,9 @@ def delete_sale(sale_id: int, db: Session = Depends(get_db)) -> None:
     if sale is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบรายการขาย")
 
-    inventory_item = db.scalar(
-        select(AgentInventory).where(
-            AgentInventory.agent_id == sale.agent_id,
-            AgentInventory.product_id == sale.product_id,
-        )
-    )
-    agent = db.get(Agent, sale.agent_id)
-    if inventory_item is not None:
-        inventory_item.quantity += sale.quantity
-    if agent is not None:
-        inventory_rows = db.scalars(
-            select(AgentInventory).where(AgentInventory.agent_id == sale.agent_id)
-        ).all()
-        agent.stock_quantity = sum(item.quantity for item in inventory_rows)
+    product = db.get(Product, sale.product_id)
+    if product is not None:
+        product.company_stock_quantity += sale.quantity
 
     db.delete(sale)
     db.commit()

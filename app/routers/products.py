@@ -4,18 +4,10 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth import get_current_admin
 from app.database import get_db
-from app.agent_types import AGENT_TYPE_SUB_CENTER
-from app.models import Agent, AgentInventory, Product, ProductRetailPriceTier, Sale
+from app.models import Product, ProductRetailPriceTier, Sale
 from app.schemas import ProductCreate, ProductRead, ProductUpdate
 
 router = APIRouter(prefix="/products", tags=["products"], dependencies=[Depends(get_current_admin)])
-
-
-def get_product_price_for_agent_type(product: Product, agent_type: str) -> int:
-    if agent_type == AGENT_TYPE_SUB_CENTER:
-        return product.default_price_sub_center
-    return product.default_price_general
-
 
 def replace_retail_price_tiers(
     db: Session,
@@ -33,14 +25,13 @@ def replace_retail_price_tiers(
 
 
 def serialize_product(product: Product) -> ProductRead:
-    agent_stock_quantity = sum(item.quantity for item in product.inventory_items)
     return ProductRead(
         **ProductRead.model_validate(product).model_dump(
             exclude={"retail_price_tiers", "agent_stock_quantity", "total_stock_quantity"}
         ),
         retail_price_tiers=product.retail_price_tiers,
-        agent_stock_quantity=agent_stock_quantity,
-        total_stock_quantity=product.company_stock_quantity + agent_stock_quantity,
+        agent_stock_quantity=0,
+        total_stock_quantity=product.company_stock_quantity,
     )
 
 
@@ -49,7 +40,7 @@ def list_products(db: Session = Depends(get_db)) -> list[Product]:
     products = list(
         db.scalars(
             select(Product)
-            .options(selectinload(Product.retail_price_tiers), selectinload(Product.inventory_items))
+            .options(selectinload(Product.retail_price_tiers))
             .order_by(Product.id.asc())
         ).all()
     )
@@ -68,22 +59,9 @@ def create_product(payload: ProductCreate, db: Session = Depends(get_db)) -> Pro
     replace_retail_price_tiers(db, product, payload.retail_price_tiers)
     db.commit()
     db.refresh(product)
-
-    agents = list(db.scalars(select(Agent).order_by(Agent.id.asc())).all())
-    for agent in agents:
-        db.add(
-            AgentInventory(
-                agent_id=agent.id,
-                product_id=product.id,
-                quantity=0,
-                unit_price=get_product_price_for_agent_type(product, agent.agent_type),
-            )
-        )
-    if agents:
-        db.commit()
     refreshed_product = db.scalar(
         select(Product)
-        .options(selectinload(Product.retail_price_tiers), selectinload(Product.inventory_items))
+        .options(selectinload(Product.retail_price_tiers))
         .where(Product.id == product.id)
     )
     return serialize_product(refreshed_product or product)
@@ -93,7 +71,7 @@ def create_product(payload: ProductCreate, db: Session = Depends(get_db)) -> Pro
 def update_product(product_id: int, payload: ProductUpdate, db: Session = Depends(get_db)) -> ProductRead:
     product = db.scalar(
         select(Product)
-        .options(selectinload(Product.retail_price_tiers), selectinload(Product.inventory_items))
+        .options(selectinload(Product.retail_price_tiers))
         .where(Product.id == product_id)
     )
     if product is None:
@@ -111,18 +89,10 @@ def update_product(product_id: int, payload: ProductUpdate, db: Session = Depend
             continue
         setattr(product, key, value)
 
-    inventory_rows = db.scalars(
-        select(AgentInventory)
-        .join(Agent, Agent.id == AgentInventory.agent_id)
-        .where(AgentInventory.product_id == product_id)
-    ).all()
-    for row in inventory_rows:
-        row.unit_price = get_product_price_for_agent_type(product, row.agent.agent_type)
-
     db.commit()
     refreshed_product = db.scalar(
         select(Product)
-        .options(selectinload(Product.retail_price_tiers), selectinload(Product.inventory_items))
+        .options(selectinload(Product.retail_price_tiers))
         .where(Product.id == product.id)
     )
     return serialize_product(refreshed_product or product)
