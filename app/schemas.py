@@ -243,6 +243,35 @@ class SaleCreate(SaleBase):
     unit_price: Optional[int] = Field(default=None, gt=0)
 
 
+class SaleBulkItemCreate(BaseModel):
+    product_id: int
+    quantity: int = Field(gt=0)
+    unit_price: Optional[int] = Field(default=None, gt=0)
+
+
+class SaleBulkCreate(BaseModel):
+    agent_id: int
+    sale_type: SaleType
+    payment_method: PaymentMethod
+    sale_date: date
+    customer_name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    customer_phone: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    items: list[SaleBulkItemCreate] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_customer_fields(self) -> "SaleBulkCreate":
+        if self.sale_type not in {"agent_pickup", "customer_purchase"}:
+            raise ValueError("ประเภทการเบิกไม่ถูกต้อง")
+        if self.payment_method not in {"transfer", "cash"}:
+            raise ValueError("วิธีจ่ายเงินไม่ถูกต้อง")
+        if self.sale_type == "customer_purchase" and not self.customer_name:
+            raise ValueError("กรุณากรอกชื่อลูกค้าเมื่อเป็นรายการลูกค้ามาเบิก")
+        if self.sale_type == "agent_pickup":
+            self.customer_name = None
+            self.customer_phone = None
+        return self
+
+
 class SaleRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

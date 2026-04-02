@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.auth import get_current_admin
 from app.database import get_db
 from app.models import Agent, Customer, Product, Sale
-from app.schemas import SaleCreate, SaleRead
+from app.schemas import SaleBulkCreate, SaleCreate, SaleRead
 
 router = APIRouter(prefix="/sales", tags=["sales"], dependencies=[Depends(get_current_admin)])
 
@@ -72,6 +72,75 @@ def resolve_customer(db: Session, payload: SaleCreate) -> Customer | None:
     return customer
 
 
+def get_agent_or_404(db: Session, agent_id: int) -> Agent:
+    agent = db.scalar(select(Agent).where(Agent.id == agent_id))
+    if agent is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบตัวแทน")
+    return agent
+
+
+def get_product_or_404(db: Session, product_id: int) -> Product:
+    product = db.scalar(
+        select(Product)
+        .options(selectinload(Product.retail_price_tiers))
+        .where(Product.id == product_id)
+    )
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบสินค้า")
+    return product
+
+
+def create_sale_entry(
+    db: Session,
+    *,
+    agent_id: int,
+    product: Product,
+    customer: Customer | None,
+    sale_type: str,
+    payment_method: str,
+    quantity: int,
+    unit_price: int | None,
+    sale_date: date,
+) -> Sale:
+    resolved_unit_price = unit_price or resolve_retail_unit_price(product, quantity)
+    unit_cost = product.cost_price_hq
+    total_amount = quantity * resolved_unit_price
+    total_cost = quantity * unit_cost
+
+    sale = Sale(
+        agent_id=agent_id,
+        product_id=product.id,
+        customer_id=customer.id if customer else None,
+        sale_type=sale_type,
+        payment_method=payment_method,
+        quantity=quantity,
+        unit_price=resolved_unit_price,
+        unit_cost=unit_cost,
+        total_amount=total_amount,
+        total_cost=total_cost,
+        gross_profit=total_amount - total_cost,
+        sale_date=sale_date,
+    )
+    db.add(sale)
+    product.company_stock_quantity -= quantity
+    db.flush()
+    return sale
+
+
+def fetch_sales_by_ids(db: Session, sale_ids: list[int]) -> list[SaleRead]:
+    if not sale_ids:
+        return []
+
+    sales = db.scalars(
+        select(Sale)
+        .options(joinedload(Sale.agent), joinedload(Sale.product), joinedload(Sale.customer))
+        .where(Sale.id.in_(sale_ids))
+        .order_by(Sale.id.asc())
+    ).unique().all()
+    sale_by_id = {sale.id: sale for sale in sales}
+    return [serialize_sale(sale_by_id[sale_id]) for sale_id in sale_ids if sale_id in sale_by_id]
+
+
 @router.get("", response_model=list[SaleRead])
 def list_sales(
     agent_id: int | None = None,
@@ -105,55 +174,78 @@ def list_sales(
 
 @router.post("", response_model=SaleRead, status_code=status.HTTP_201_CREATED)
 def create_sale(payload: SaleCreate, db: Session = Depends(get_db)) -> SaleRead:
-    agent = db.scalar(
-        select(Agent)
-        .where(Agent.id == payload.agent_id)
-    )
-    if agent is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบตัวแทน")
-
-    product = db.scalar(
-        select(Product)
-        .options(selectinload(Product.retail_price_tiers))
-        .where(Product.id == payload.product_id)
-    )
-    if product is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบสินค้า")
+    get_agent_or_404(db, payload.agent_id)
+    product = get_product_or_404(db, payload.product_id)
 
     if product.company_stock_quantity < payload.quantity:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="สต๊อกสินค้าไม่เพียงพอ")
 
-    resolved_unit_price = payload.unit_price or resolve_retail_unit_price(product, payload.quantity)
-    unit_cost = product.cost_price_hq
-    total_amount = payload.quantity * resolved_unit_price
-    total_cost = payload.quantity * unit_cost
     customer = resolve_customer(db, payload)
-
-    sale = Sale(
+    sale = create_sale_entry(
+        db,
         agent_id=payload.agent_id,
-        product_id=payload.product_id,
-        customer_id=customer.id if customer else None,
+        product=product,
+        customer=customer,
         sale_type=payload.sale_type,
         payment_method=payload.payment_method,
         quantity=payload.quantity,
-        unit_price=resolved_unit_price,
-        unit_cost=unit_cost,
-        total_amount=total_amount,
-        total_cost=total_cost,
-        gross_profit=total_amount - total_cost,
+        unit_price=payload.unit_price,
         sale_date=payload.sale_date,
     )
-    db.add(sale)
-    product.company_stock_quantity -= payload.quantity
     db.commit()
-    db.refresh(sale)
-    sale = db.scalar(
-        select(Sale)
-        .options(joinedload(Sale.agent), joinedload(Sale.product), joinedload(Sale.customer))
-        .where(Sale.id == sale.id)
-    ) or sale
+    return fetch_sales_by_ids(db, [sale.id])[0]
 
-    return serialize_sale(sale)
+
+@router.post("/bulk", response_model=list[SaleRead], status_code=status.HTTP_201_CREATED)
+def create_sales_bulk(payload: SaleBulkCreate, db: Session = Depends(get_db)) -> list[SaleRead]:
+    get_agent_or_404(db, payload.agent_id)
+
+    requested_quantities: dict[int, int] = {}
+    products: dict[int, Product] = {}
+    for item in payload.items:
+        requested_quantities[item.product_id] = requested_quantities.get(item.product_id, 0) + item.quantity
+        if item.product_id not in products:
+            products[item.product_id] = get_product_or_404(db, item.product_id)
+
+    for product_id, requested_quantity in requested_quantities.items():
+        product = products[product_id]
+        if product.company_stock_quantity < requested_quantity:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"สต๊อกสินค้า {product.name} ไม่เพียงพอ",
+            )
+
+    customer_payload = SaleCreate(
+        agent_id=payload.agent_id,
+        product_id=payload.items[0].product_id,
+        sale_type=payload.sale_type,
+        payment_method=payload.payment_method,
+        quantity=payload.items[0].quantity,
+        unit_price=payload.items[0].unit_price,
+        sale_date=payload.sale_date,
+        customer_name=payload.customer_name,
+        customer_phone=payload.customer_phone,
+    )
+    customer = resolve_customer(db, customer_payload)
+
+    created_sales: list[Sale] = []
+    for item in payload.items:
+        created_sales.append(
+            create_sale_entry(
+                db,
+                agent_id=payload.agent_id,
+                product=products[item.product_id],
+                customer=customer,
+                sale_type=payload.sale_type,
+                payment_method=payload.payment_method,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                sale_date=payload.sale_date,
+            )
+        )
+
+    db.commit()
+    return fetch_sales_by_ids(db, [sale.id for sale in created_sales])
 
 
 @router.delete("/{sale_id}", status_code=status.HTTP_204_NO_CONTENT)
