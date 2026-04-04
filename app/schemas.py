@@ -229,7 +229,7 @@ class SaleBase(BaseModel):
     def validate_customer_fields(self) -> "SaleBase":
         if self.sale_type not in {"agent_pickup", "customer_purchase"}:
             raise ValueError("ประเภทการเบิกไม่ถูกต้อง")
-        if self.payment_method not in {"transfer", "cash"}:
+        if self.payment_method not in {"transfer", "cash", "credit"}:
             raise ValueError("วิธีจ่ายเงินไม่ถูกต้อง")
         if self.sale_type == "customer_purchase" and not self.customer_name:
             raise ValueError("กรุณากรอกชื่อลูกค้าเมื่อเป็นรายการลูกค้ามาเบิก")
@@ -262,7 +262,7 @@ class SaleBulkCreate(BaseModel):
     def validate_customer_fields(self) -> "SaleBulkCreate":
         if self.sale_type not in {"agent_pickup", "customer_purchase"}:
             raise ValueError("ประเภทการเบิกไม่ถูกต้อง")
-        if self.payment_method not in {"transfer", "cash"}:
+        if self.payment_method not in {"transfer", "cash", "credit"}:
             raise ValueError("วิธีจ่ายเงินไม่ถูกต้อง")
         if self.sale_type == "customer_purchase" and not self.customer_name:
             raise ValueError("กรุณากรอกชื่อลูกค้าเมื่อเป็นรายการลูกค้ามาเบิก")
