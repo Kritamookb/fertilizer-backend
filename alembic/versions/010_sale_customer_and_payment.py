@@ -16,32 +16,37 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "customers",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("agent_id", sa.Integer(), nullable=False),
-        sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("phone", sa.String(length=50), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(["agent_id"], ["agents.id"]),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_customers_id"), "customers", ["id"], unique=False)
-    op.create_index(op.f("ix_customers_agent_id"), "customers", ["agent_id"], unique=False)
-    op.create_index(op.f("ix_customers_name"), "customers", ["name"], unique=False)
-    op.create_index(op.f("ix_customers_phone"), "customers", ["phone"], unique=False)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS customers (
+            id SERIAL NOT NULL,
+            agent_id INTEGER NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            phone VARCHAR(50),
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+            PRIMARY KEY (id),
+            FOREIGN KEY(agent_id) REFERENCES agents (id)
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_customers_id ON customers (id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_customers_agent_id ON customers (agent_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_customers_name ON customers (name)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_customers_phone ON customers (phone)")
 
-    op.add_column("sales", sa.Column("customer_id", sa.Integer(), nullable=True))
-    op.add_column(
-        "sales",
-        sa.Column("sale_type", sa.String(length=50), nullable=False, server_default="agent_pickup"),
-    )
-    op.add_column(
-        "sales",
-        sa.Column("payment_method", sa.String(length=50), nullable=False, server_default="transfer"),
-    )
-    op.create_index(op.f("ix_sales_customer_id"), "sales", ["customer_id"], unique=False)
-    op.create_foreign_key("fk_sales_customer_id", "sales", "customers", ["customer_id"], ["id"])
+    op.execute("ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_id INTEGER")
+    op.execute("ALTER TABLE sales ADD COLUMN IF NOT EXISTS sale_type VARCHAR(50) NOT NULL DEFAULT 'agent_pickup'")
+    op.execute("ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50) NOT NULL DEFAULT 'transfer'")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_sales_customer_id ON sales (customer_id)")
+    op.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'fk_sales_customer_id'
+            ) THEN
+                ALTER TABLE sales ADD CONSTRAINT fk_sales_customer_id
+                    FOREIGN KEY (customer_id) REFERENCES customers (id);
+            END IF;
+        END $$
+    """)
 
 
 def downgrade() -> None:

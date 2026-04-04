@@ -16,28 +16,19 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "product_retail_price_tiers",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("product_id", sa.Integer(), nullable=False),
-        sa.Column("min_quantity", sa.Integer(), nullable=False),
-        sa.Column("unit_price", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(["product_id"], ["products.id"]),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("product_id", "min_quantity", name="uq_product_retail_price_tier_quantity"),
-    )
-    op.create_index(
-        op.f("ix_product_retail_price_tiers_id"),
-        "product_retail_price_tiers",
-        ["id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_product_retail_price_tiers_product_id"),
-        "product_retail_price_tiers",
-        ["product_id"],
-        unique=False,
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS product_retail_price_tiers (
+            id SERIAL NOT NULL,
+            product_id INTEGER NOT NULL,
+            min_quantity INTEGER NOT NULL,
+            unit_price INTEGER NOT NULL,
+            PRIMARY KEY (id),
+            FOREIGN KEY(product_id) REFERENCES products (id),
+            CONSTRAINT uq_product_retail_price_tier_quantity UNIQUE (product_id, min_quantity)
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_product_retail_price_tiers_id ON product_retail_price_tiers (id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_product_retail_price_tiers_product_id ON product_retail_price_tiers (product_id)")
 
     connection = op.get_bind()
     rows = connection.execute(

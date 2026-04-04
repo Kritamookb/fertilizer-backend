@@ -16,20 +16,22 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "agent_inventories",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("agent_id", sa.Integer(), nullable=False),
-        sa.Column("product_id", sa.Integer(), nullable=False),
-        sa.Column("quantity", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("unit_price", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(["agent_id"], ["agents.id"]),
-        sa.ForeignKeyConstraint(["product_id"], ["products.id"]),
-        sa.UniqueConstraint("agent_id", "product_id", name="uq_agent_product_inventory"),
-    )
-    op.create_index("ix_agent_inventories_id", "agent_inventories", ["id"], unique=False)
-    op.create_index("ix_agent_inventories_agent_id", "agent_inventories", ["agent_id"], unique=False)
-    op.create_index("ix_agent_inventories_product_id", "agent_inventories", ["product_id"], unique=False)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS agent_inventories (
+            id SERIAL NOT NULL,
+            agent_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            quantity INTEGER DEFAULT '0' NOT NULL,
+            unit_price INTEGER NOT NULL,
+            PRIMARY KEY (id),
+            FOREIGN KEY(agent_id) REFERENCES agents (id),
+            FOREIGN KEY(product_id) REFERENCES products (id),
+            CONSTRAINT uq_agent_product_inventory UNIQUE (agent_id, product_id)
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_agent_inventories_id ON agent_inventories (id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_agent_inventories_agent_id ON agent_inventories (agent_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_agent_inventories_product_id ON agent_inventories (product_id)")
 
 
 def downgrade() -> None:

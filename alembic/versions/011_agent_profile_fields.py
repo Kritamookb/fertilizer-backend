@@ -16,11 +16,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("agents", sa.Column("nickname", sa.String(length=255), nullable=True))
-    op.add_column("agents", sa.Column("line_id", sa.String(length=100), nullable=True))
-    op.add_column("agents", sa.Column("bank_name", sa.String(length=255), nullable=True))
-    op.add_column("agents", sa.Column("bank_account_name", sa.String(length=255), nullable=True))
-    op.add_column("agents", sa.Column("bank_account_number", sa.String(length=100), nullable=True))
+    op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS nickname VARCHAR(255)")
+    op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS line_id VARCHAR(100)")
+    op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS bank_name VARCHAR(255)")
+    op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS bank_account_name VARCHAR(255)")
+    op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS bank_account_number VARCHAR(100)")
 
 
 def downgrade() -> None:

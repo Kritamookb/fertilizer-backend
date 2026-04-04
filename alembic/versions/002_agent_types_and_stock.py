@@ -16,18 +16,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "agents",
-        sa.Column("agent_type", sa.String(length=50), nullable=False, server_default="general"),
-    )
-    op.add_column(
-        "agents",
-        sa.Column("stock_quantity", sa.Integer(), nullable=False, server_default="0"),
-    )
-    op.add_column(
-        "agents",
-        sa.Column("stock_unit_price", sa.Integer(), nullable=False, server_default="800"),
-    )
+    op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS agent_type VARCHAR(50) NOT NULL DEFAULT 'general'")
+    op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS stock_quantity INTEGER NOT NULL DEFAULT 0")
+    op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS stock_unit_price INTEGER NOT NULL DEFAULT 800")
 
 
 def downgrade() -> None:

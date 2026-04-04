@@ -17,9 +17,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("agents", sa.Column("agent_code", sa.String(length=100), nullable=True))
-    op.add_column("agents", sa.Column("address", sa.String(length=1000), nullable=True))
-    op.create_index("ix_agents_agent_code", "agents", ["agent_code"], unique=True)
+    op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS agent_code VARCHAR(100)")
+    op.execute("ALTER TABLE agents ADD COLUMN IF NOT EXISTS address VARCHAR(1000)")
+    op.execute("CREATE UNIQUE INDEX IF NOT EXISTS ix_agents_agent_code ON agents (agent_code)")
 
 
 def downgrade() -> None:
