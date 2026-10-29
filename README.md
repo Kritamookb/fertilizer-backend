@@ -5,8 +5,8 @@ and single-level commission system.
 
 ## Status
 
-**Client project – deployment not verified.** No deployment configuration in this repo;
-not deployed on Simify infrastructure.
+**Client project** (confirmed by Simify, 29 Oct 2026). The client's deployment is not
+documented in this repo and it is not hosted on Simify infrastructure.
 
 Evidence: last commit 2026-04-04; 20 commits between 2026-03-24 and 2026-04-04.
 
