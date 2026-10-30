@@ -91,8 +91,9 @@ details, so never commit or share real data or database dumps.
 - Single admin role; no agent-facing login.
 - On startup the app also runs `Base.metadata.create_all()` and ad-hoc `ALTER TABLE`
   column patches alongside Alembic, so schema changes are managed in two places.
-- `app/config.py` has fallback defaults for `JWT_SECRET` and `ADMIN_PASSWORD`; always set
-  both explicitly outside local development.
+- `JWT_SECRET` is required (32+ characters, no fallback): the app refuses to start without it.
+  `ADMIN_PASSWORD` (12+ characters) is only needed to create the first admin on an empty
+  database; startup fails rather than creating an admin with a default password.
 - The CORS origin list is hard-coded in `app/config.py`.
 - Two migration files share the `012_` prefix (`012_stock_transfer_history.py` is revision
   `012`, `012_agent_code_and_address.py` is revision `013`).

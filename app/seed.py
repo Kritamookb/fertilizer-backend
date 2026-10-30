@@ -11,11 +11,17 @@ settings = get_settings()
 def seed_initial_data(db: Session) -> None:
     existing_admin = db.scalar(select(AdminUser).where(AdminUser.username == settings.admin_username))
     if existing_admin is None:
+        password = settings.admin_password or ""
+        if len(password) < 12 or "change-me" in password.lower():
+            raise RuntimeError(
+                "No admin user exists yet: set ADMIN_PASSWORD (at least 12 characters, "
+                "not the example value) to create the first admin, then remove it from .env."
+            )
         db.add(
             AdminUser(
                 username=settings.admin_username,
                 email=settings.admin_email,
-                hashed_password=get_password_hash(settings.admin_password),
+                hashed_password=get_password_hash(password),
             )
         )
 

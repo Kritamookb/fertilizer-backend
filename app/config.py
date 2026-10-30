@@ -17,7 +17,8 @@ class Settings(BaseSettings):
     debug: bool = False
 
     database_url: str = Field(..., description="PostgreSQL connection URL")
-    jwt_secret: str = "change-me"
+    # Required: no fallback, so a deployment can never run with a publicly known signing key
+    jwt_secret: str = Field(..., min_length=32, description="Random secret for signing admin JWTs")
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24
 
@@ -25,8 +26,9 @@ class Settings(BaseSettings):
     max_agents: int = 50
 
     admin_username: str = "admin"
-    admin_email: str = "admin@gmail.com"
-    admin_password: str = "change-me"
+    admin_email: str = "admin@example.com"
+    # Only needed to create the first admin on an empty database (see app/seed.py)
+    admin_password: str | None = None
 
     cors_origins: list[str] = Field(
         default_factory=lambda: [
@@ -38,6 +40,13 @@ class Settings(BaseSettings):
             "http://fertilizer.connect2play.site",
         ]
     )
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def validate_jwt_secret(cls, value: str) -> str:
+        if "change-me" in value.lower():
+            raise ValueError("JWT_SECRET is still the example value; generate a random secret")
+        return value
 
     @field_validator("database_url")
     @classmethod
